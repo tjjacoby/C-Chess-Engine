@@ -3,12 +3,13 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include "globals.h"
 #include "moves.h"
 #include "binary_printer.h"
 typedef uint64_t BitBoard;
 
 #define MAX_MOVES 1000000
-#define DEPTH 3
+#define DEPTH 1
 
 int WcastleL = 1;
 int WcastleR = 1;
@@ -52,6 +53,7 @@ int moveCount = 0;
 int find_type(BitBoard piece) {
 
     if((piece & Main) == 0) {
+        printf("find_type: piece 0x%llx not in Main 0x%llx\n", piece, Main);
         return 0;
     }
     // Check for pond
@@ -92,42 +94,7 @@ int find_type(BitBoard piece) {
 
 void updateAll();
 
-typedef struct BoardState {
-    BitBoard White_ponds;
-    BitBoard White_knights;
-    BitBoard White_rooks;
-    BitBoard White_bishops;
-    BitBoard White_queen;
-    BitBoard White_king;
-    BitBoard Black_ponds;
-    BitBoard Black_knights;
-    BitBoard Black_rooks;
-    BitBoard Black_bishops;
-    BitBoard Black_queen;
-    BitBoard Black_king;
-} BoardState;
-
-typedef struct Move{
-
-    
-    BitBoard Bwhite;
-    BitBoard Bblack;
-    BitBoard Piece;
-    BitBoard Square;
-    int type;
-    int capturetype;
-    int score;
-    int castle;
-    BoardState prevState;  // Store complete board state before move
-
-}Move;
-
-typedef struct MoveList 
-{
-    Move* moves;
-    int size;
-}MoveList;
-
+// BoardState, Move, and MoveList are now defined in globals.h
 
 Move MoveHistory[MAX_MOVES];
 int count;
@@ -1374,7 +1341,7 @@ void StoreMove(Move move){
 int move_piece(Move move, int isWhite) {
     BitBoard Piece = move.Piece;
     BitBoard sqaure = move.Square;
-    
+    printf("Moving piece from %llx to %llx\n", Piece, sqaure);
     int type = find_type(Piece);
     
     if(type == 0) {
@@ -1766,7 +1733,7 @@ int move_piece(Move move, int isWhite) {
 }
 
 int makeMove(Move move, int isWhite) {
-    
+    printf("Making move from %llx to %llx\n", move.Piece, move.Square);
     // Capture board state BEFORE making the move
     move.prevState.White_ponds = White_ponds;
     move.prevState.White_knights = White_knights;
@@ -1913,6 +1880,7 @@ int userMove(int isWhite) {
 
         
         int valid = makeMove(user,isWhite);
+        printf("made MOVE!!!!\n\n");
         if (valid == 1) {
             return 1;
         } else {
@@ -2187,7 +2155,8 @@ void tests3() {
     //THESE SHOULD TEST THE CHECK AND CHECKMATE OF THE GAME ASWELL AS THE UNDO WITH CHECKS (SCARED)
     
 }
-int main() {
+// Old main function - now renamed to avoid conflicts with frontend
+int main_old() {
     int isWhite = 0;
     initPieceBitboards();
 

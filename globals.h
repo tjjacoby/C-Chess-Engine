@@ -4,11 +4,33 @@
 
 #include <stdint.h>
 
-// Define shared structs
+// BoardState structure for storing game state
 typedef struct {
+    uint64_t White_ponds;
+    uint64_t White_knights;
+    uint64_t White_rooks;
+    uint64_t White_bishops;
+    uint64_t White_queen;
+    uint64_t White_king;
+    uint64_t Black_ponds;
+    uint64_t Black_knights;
+    uint64_t Black_rooks;
+    uint64_t Black_bishops;
+    uint64_t Black_queen;
+    uint64_t Black_king;
+} BoardState;
+
+// Define shared structs - MUST match the definition in main.c
+typedef struct {
+    uint64_t Bwhite;
+    uint64_t Bblack;
     uint64_t Piece;
     uint64_t Square;
+    int type;
+    int capturetype;
     int score;
+    int castle;
+    BoardState prevState;
 } Move;
 
 typedef struct {

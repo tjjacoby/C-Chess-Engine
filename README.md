@@ -62,6 +62,19 @@ make clean
 - [ ] Add UCI (Universal Chess Interface) protocol support
 
 
+## FRONTEND MAKE 
+# Compile the frontend
+make -f makefile_frontend
+
+# Copy DLL files (if needed)
+make -f makefile_frontend dlls
+
+# Compile and run
+make -f makefile_frontend run
+
+# Clean build files
+make -f makefile_frontend clean
+
 
 ## Author
 

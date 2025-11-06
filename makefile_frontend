@@ -1,0 +1,58 @@
+# Makefile for Chess Frontend with SFML and Engine Integration
+
+# Compilers
+CC = gcc
+CXX = g++
+
+# SFML paths
+SFML_DIR = SFML/SFML-2.6.1-windows-gcc-13.1.0-mingw-64-bit/SFML-2.6.1
+SFML_INCLUDE = $(SFML_DIR)/include
+SFML_LIB = $(SFML_DIR)/lib
+
+# Compiler flags
+CFLAGS = -Wall -c
+CXXFLAGS = -Wall -I$(SFML_INCLUDE)
+
+# Linker flags
+LDFLAGS = -L$(SFML_LIB) -lsfml-graphics -lsfml-window -lsfml-system -lm
+
+# Target executable
+TARGET = frontend
+
+# Source files
+CPP_SOURCES = frontend.cpp
+C_SOURCES = engine_interface.c main.c
+
+# Object files
+OBJECTS = frontend.o engine_interface.o main.o
+
+# Build target
+all: $(TARGET)
+	@echo "Chess GUI with AI built successfully!"
+	@echo "Run with: ./$(TARGET).exe"
+
+$(TARGET): $(OBJECTS)
+	$(CXX) $(OBJECTS) -o $(TARGET) $(LDFLAGS)
+
+frontend.o: frontend.cpp engine_interface.h
+	$(CXX) $(CXXFLAGS) -c frontend.cpp
+
+engine_interface.o: engine_interface.c engine_interface.h globals.h moves.h
+	$(CC) $(CFLAGS) engine_interface.c
+
+main.o: main.c moves.h binary_printer.h
+	$(CC) $(CFLAGS) main.c
+
+# Copy DLLs
+dlls:
+	copy $(SFML_DIR)\bin\*.dll .
+
+# Run the program
+run: $(TARGET)
+	.\$(TARGET).exe
+
+# Clean build files
+clean:
+	del /f $(OBJECTS) $(TARGET).exe
+
+.PHONY: all dlls run clean
