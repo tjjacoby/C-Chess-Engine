@@ -8,7 +8,7 @@
 typedef uint64_t BitBoard;
 
 #define MAX_MOVES 1000000
-#define DEPTH 1
+#define DEPTH 3
 
 int WcastleL = 1;
 int WcastleR = 1;
