@@ -1,0 +1,2 @@
+This my a chess Engine built in C. It uses Bitboards(64 bit number) to repersent the chess board and legal moves. It uses Bitwise operrations to generate legal moves and a MiniMax algo wth alpha beta purning to find the ideal move for the Ai.
+I made this project in late 2023 and stopped after it worked to an extent of the Ai making a legal move. I am picking up this project again with the goal for creating a Ai that can beat a "Good chess player".
