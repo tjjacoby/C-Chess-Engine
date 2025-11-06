@@ -1859,6 +1859,15 @@ void undocapture(Move made, int captured) {
 int eval_position() {
     int WhiteScore = 0;
     int BlackScore = 0;
+    //TODO:
+    /*
+        Add positional evaluation
+            - Create piece-square tables for each piece type
+            - Use these tables to add/subtract points based on piece positions
+        Add points for checks and checkmates
+            - Checkmate should add max points to the side delivering it
+            - Being in check should subtract points from the side in check
+    */
 
 
     WhiteScore += (countSetBits(White_ponds) * PondValue);
@@ -1866,7 +1875,6 @@ int eval_position() {
     WhiteScore += (countSetBits(White_rooks) * RookValue);
     WhiteScore += (countSetBits(White_queen) * QueenValue);
     WhiteScore += (countSetBits(White_bishops) * BishopValue);
-    //add a lot of score if checkmate
     
 
     BlackScore += (countSetBits(Black_ponds) * PondValue);
@@ -1874,7 +1882,6 @@ int eval_position() {
     BlackScore += (countSetBits(Black_rooks) * RookValue);
     BlackScore += (countSetBits(Black_queen) * QueenValue);
     BlackScore += (countSetBits(Black_bishops) * BishopValue);
-    //add a lot of score if checkmate
 
     return (WhiteScore - BlackScore);
 
