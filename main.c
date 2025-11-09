@@ -9,7 +9,7 @@
 typedef uint64_t BitBoard;
 
 #define MAX_MOVES 1000000
-#define DEPTH 1
+#define DEPTH 4
 
 int WcastleL = 1;
 int WcastleR = 1;
@@ -49,11 +49,12 @@ BitBoard Black_queen;
 BitBoard Black_king;
 
 int moveCount = 0;
+int movesEvaluated = 0;  // Counter for moves evaluated during search
 
 int find_type(BitBoard piece) {
 
     if((piece & Main) == 0) {
-        printf("find_type: piece 0x%llx not in Main 0x%llx\n", piece, Main);
+        //printf("find_type: piece 0x%llx not in Main 0x%llx\n", piece, Main);
         return 0;
     }
     // Check for pond
@@ -337,10 +338,13 @@ BitBoard find_pondmoves(BitBoard Piece, int isWhite) {
     BitBoard enemyColour = isWhite ? Black:White;
 
     // use the pawn's position (Piece) and avoid file wrap
-    BitBoard takeLeft = isWhite ? (((Piece & ClearFile_A) << 7) & enemyColour)
-                                : (((Piece & ClearFile_H) >> 7) & enemyColour);
-    BitBoard takeRight = isWhite ? (((Piece & ClearFile_H) << 9) & enemyColour)
-                                 : (((Piece & ClearFile_A) >> 9) & enemyColour);
+    // In this bitboard: H=LSB (bit 0), A=MSB (bit 7) within each rank
+    // For white: << 7 (toward H) needs ClearFile_H, << 9 (toward A) needs ClearFile_A
+    // For black: >> 9 (toward A) needs ClearFile_A, >> 7 (toward H) needs ClearFile_H
+    BitBoard takeLeft = isWhite ? (((Piece & ClearFile_H) << 7) & enemyColour)
+                                : (((Piece & ClearFile_H) >> 9) & enemyColour);
+    BitBoard takeRight = isWhite ? (((Piece & ClearFile_A) << 9) & enemyColour)
+                                 : (((Piece & ClearFile_A) >> 7) & enemyColour);
     
     return moveOne|moveTwo|takeLeft|takeRight;
 
@@ -369,9 +373,13 @@ Move find_pondtakeright(BitBoard Piece, int isWhite) {
 
     BitBoard enemyColour = isWhite ? Black:White;
 
-    // capture diagonally forward-right for the side to move
-    move.Square = isWhite ? (((Piece & ClearFile_H) << 9) & enemyColour)
-                          : (((Piece & ClearFile_A) >> 9) & enemyColour);
+    // capture diagonally forward-right (toward A file in this bitboard)
+    // In this bitboard: H=LSB (bit 0), A=MSB (bit 7) within each rank
+    // For white: << 9 moves toward A, needs ClearFile_A to prevent wrap
+    // For black: >> 7 moves toward A, needs ClearFile_A to prevent wrap
+
+    move.Square = isWhite ? (((Piece & ClearFile_A) << 9) & enemyColour)
+                          : (((Piece & ClearFile_A) >> 7) & enemyColour);
     move.Piece = Piece;
 
     return move;
@@ -379,10 +387,15 @@ Move find_pondtakeright(BitBoard Piece, int isWhite) {
 Move find_pondtakeleft(BitBoard Piece, int isWhite) {
     Move move;
     BitBoard enemyColour = isWhite ? Black:White;
-    // capture diagonally forward-left for the side to move
-    move.Square = isWhite ? (((Piece & ClearFile_A) << 7) & enemyColour)
-                          : (((Piece & ClearFile_H) >> 7) & enemyColour);
+    // capture diagonally forward-left (toward H file in this bitboard)
+    // In this bitboard: H=LSB (bit 0), A=MSB (bit 7) within each rank
+    // For white: << 7 moves toward H, needs ClearFile_H to prevent wrap
+    // For black: >> 9 moves toward H, needs ClearFile_H to prevent wrap
+
+    move.Square = isWhite ? (((Piece & ClearFile_H) << 7) & enemyColour)
+                          : (((Piece & ClearFile_H) >> 9) & enemyColour);
     move.Piece = Piece;
+
     return move;
 }
 
@@ -1341,7 +1354,7 @@ void StoreMove(Move move){
 int move_piece(Move move, int isWhite) {
     BitBoard Piece = move.Piece;
     BitBoard sqaure = move.Square;
-    printf("Moving piece from %llx to %llx\n", Piece, sqaure);
+    //printf("Moving piece from %llx to %llx\n", Piece, sqaure);
     int type = find_type(Piece);
     
     if(type == 0) {
@@ -1733,7 +1746,6 @@ int move_piece(Move move, int isWhite) {
 }
 
 int makeMove(Move move, int isWhite) {
-    printf("Making move from %llx to %llx\n", move.Piece, move.Square);
     // Capture board state BEFORE making the move
     move.prevState.White_ponds = White_ponds;
     move.prevState.White_knights = White_knights;
@@ -1750,6 +1762,26 @@ int makeMove(Move move, int isWhite) {
 
     if(move_piece(move,isWhite) == -1) {
         printf("Failed to move piece\n");
+        return 0;
+    }
+
+    // Check if the move leaves the player in check
+    if(isCheck(isWhite)) {
+        //printf("Invalid move: %s would be in check!\n", isWhite ? "White" : "Black");
+        // Undo the move
+        White_ponds = move.prevState.White_ponds;
+        White_knights = move.prevState.White_knights;
+        White_rooks = move.prevState.White_rooks;
+        White_bishops = move.prevState.White_bishops;
+        White_queen = move.prevState.White_queen;
+        White_king = move.prevState.White_king;
+        Black_ponds = move.prevState.Black_ponds;
+        Black_knights = move.prevState.Black_knights;
+        Black_rooks = move.prevState.Black_rooks;
+        Black_bishops = move.prevState.Black_bishops;
+        Black_queen = move.prevState.Black_queen;
+        Black_king = move.prevState.Black_king;
+        updateAll();
         return 0;
     }
 
@@ -1900,7 +1932,10 @@ Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
     if (depth == 0) {
         Move dummyMove = (Move){0};
         int eval = eval_position();
-        dummyMove.score = isMaximizingPlayer ? eval : -eval;
+        // eval_position returns positive for White advantage
+        // When it's White's turn (isMaximizingPlayer=1), use eval as-is
+        // When it's Black's turn (isMaximizingPlayer=0), negate it so Black maximizes its advantage
+        dummyMove.score = eval;
         return dummyMove;
     }
 
@@ -1917,6 +1952,7 @@ Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
 
     for (int i = 0; i < moves.size; i++) {
         Move move = moves.moves[i];
+        movesEvaluated++;  // Increment counter for each move evaluated
 
         // Snapshot castling rights
         int WcL = WcastleL, WcR = WcastleR, BcL = BcastleL, BcR = BcastleR;
@@ -1932,6 +1968,7 @@ Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
         WcastleL = WcL; WcastleR = WcR; BcastleL = BcL; BcastleR = BcR;
 
         if (isMaximizingPlayer) {
+            // White maximizes the score
             if (eval.score > bestScore) {
                 bestScore = eval.score;
                 bestMove = move;
@@ -1939,6 +1976,7 @@ Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
             }
             if (eval.score > alpha) alpha = eval.score;
         } else {
+            // Black minimizes the score (since eval is from White's perspective)
             if (eval.score < bestScore) {
                 bestScore = eval.score;
                 bestMove = move;
@@ -1960,7 +1998,16 @@ Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
 Move bestMove(int isWhite) {
 
     int depth = DEPTH;
-    return minimax(depth,NINF, INF, isWhite);
+    movesEvaluated = 0;  // Reset counter before search
+    
+    Move result = minimax(depth,NINF, INF, isWhite);
+    
+    // Print stats
+    printf("Moves evaluated: %d\n", movesEvaluated);
+    printf("Best move found: from=0x%llx to=0x%llx, score=%d\n", 
+           result.Piece, result.Square, result.score);
+    
+    return result;
 
 }
 
