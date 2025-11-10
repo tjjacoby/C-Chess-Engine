@@ -6,17 +6,16 @@
 #include "globals.h"
 #include "moves.h"
 #include "binary_printer.h"
+#include "position_tables.h"
 typedef uint64_t BitBoard;
 
 #define MAX_MOVES 1000000
-#define DEPTH 4
+#define DEPTH 5
 
 int WcastleL = 1;
 int WcastleR = 1;
 int BcastleL = 1;
 int BcastleR = 1;
-
-
 
 
 #define INF 2147483647
@@ -58,7 +57,7 @@ int find_type(BitBoard piece) {
         return 0;
     }
     // Check for pond
-    if (piece & (White_ponds | Black_ponds)) {
+        if (piece & (White_ponds | Black_ponds)) {
         return 1; // Pond
     }
     
@@ -601,13 +600,18 @@ MoveList find_allponds(int isWhite) {
     
     //Move moves[size*4];
     Move * moves = (Move*)malloc(sizeof(Move) * (size*4));
+    
+    if (moves == NULL) {
+        fprintf(stderr, "ERROR: malloc failed in find_allponds\n");
+        return (MoveList){.moves = NULL, .size = 0};
+    }
 
     BitBoard Piece_LSB;
     BitBoard Temp = isWhite ? White_ponds : Black_ponds;
 
     int index = 0;  // Use a separate index variable
 
-    for (int i = 0; i < (size * 4); i++) {
+    for (int i = 0; i < size; i++) {
         //gets LSB to isolate the piece on the board
         Piece_LSB = getLSB(Temp);
         tempmove = find_pondmoveup(Piece_LSB, isWhite);
@@ -634,7 +638,7 @@ MoveList find_allponds(int isWhite) {
             moves[index].Piece = tempmove.Piece;
             index++;
         }
-        //removes the LSB then get the next
+        //removes the LSB then get the next pawn
         Temp = removeLSB(Temp);
     }
 
@@ -768,19 +772,14 @@ MoveList find_allrooks(int isWhite) {
         // Add each valid move to the moves array
         numofmoves = countSetBits(validMoves);
         
-        if (numofmoves == 0) {
-            // This rook has no moves; continue to next piece
-        } else {
-            for (int rank = 0; rank < 8; ++rank) {
-                for (int file = 0; file < 8; ++file) {
-                    BitBoard square = 1ULL << (rank * 8 + file);
-                    if (square & validMoves) {
-                        moves.moves[moves.size].Square = square;
-                        moves.moves[moves.size].Piece = rookSquare;
-                        moves.size++;
-                        
-                    }
-                }
+        if (numofmoves) {
+            BitBoard vm = validMoves;
+            while (vm) {
+                BitBoard square = getLSB(vm);
+                vm = removeLSB(vm);
+                moves.moves[moves.size].Square = square;
+                moves.moves[moves.size].Piece = rookSquare;
+                moves.size++;
             }
         }
     }
@@ -817,19 +816,14 @@ MoveList find_allbishops(int isWhite) {
         // Add each valid move to the moves array
         numofmoves = countSetBits(validMoves);
         
-        if (numofmoves == 0) {
-            // This bishop has no moves; continue
-        } else {
-            for (int rank = 0; rank < 8; ++rank) {
-                for (int file = 0; file < 8; ++file) {
-                    BitBoard square = 1ULL << (rank * 8 + file);
-                    if (square & validMoves) {
-                        moves.moves[moves.size].Square = square;
-                        moves.moves[moves.size].Piece = bishopSquare;
-                        moves.size++;
-                        
-                    }
-                }
+        if (numofmoves) {
+            BitBoard vm = validMoves;
+            while (vm) {
+                BitBoard square = getLSB(vm);
+                vm = removeLSB(vm);
+                moves.moves[moves.size].Square = square;
+                moves.moves[moves.size].Piece = bishopSquare;
+                moves.size++;
             }
         }
     }
@@ -866,19 +860,14 @@ MoveList find_allqueens(int isWhite) {
         // Add each valid move to the moves array
         numofmoves = countSetBits(validMoves);
         
-        if (numofmoves == 0) {
-            // This queen has no moves; continue
-        } else {
-            for (int rank = 0; rank < 8; ++rank) {
-                for (int file = 0; file < 8; ++file) {
-                    BitBoard square = 1ULL << (rank * 8 + file);
-                    if (square & validMoves) {
-                        moves.moves[moves.size].Square = square;
-                        moves.moves[moves.size].Piece = QueenSquare;
-                        moves.size++;
-                        
-                    }
-                }
+        if (numofmoves) {
+            BitBoard vm = validMoves;
+            while (vm) {
+                BitBoard square = getLSB(vm);
+                vm = removeLSB(vm);
+                moves.moves[moves.size].Square = square;
+                moves.moves[moves.size].Piece = QueenSquare;
+                moves.size++;
             }
         }
     }
@@ -911,7 +900,7 @@ MoveList find_allknights(int isWhite) {
 
     int index = 0;  // Use a separate index variable
 
-    for (int i = 0; i < (size * 4); i++) {
+    for (int i = 0; i < size; i++) {
         //gets LSB to isolate the piece on the board
         Piece_LSB = getLSB(Temp);
         tempmove = find_tallLleft(Piece_LSB, isWhite);
@@ -964,7 +953,7 @@ MoveList find_allknights(int isWhite) {
             moves[index].Piece = tempmove.Piece;
             index++;
         }
-        //removes the LSB then get the next
+        //removes the LSB then get the next knight
         Temp = removeLSB(Temp);
     }
 
@@ -1104,12 +1093,21 @@ MoveList combineMoveLists(MoveList list1, MoveList list2) {
     MoveList combinedList;
 
     int size = list1.size + list2.size;
+    
+    // Handle empty case
+    if (size == 0) {
+        combinedList.moves = NULL;
+        combinedList.size = 0;
+        return combinedList;
+    }
+    
     Move *moves = malloc(sizeof(Move) * (size));
     // Allocate memory for the combined moves
     combinedList.moves = moves;
     //(Move *)malloc(sizeof(Move) * (list1.size + list2.size));
     if (combinedList.moves == NULL) {
         // Handle allocation failure
+        fprintf(stderr, "ERROR: malloc failed in combineMoveLists for %d moves\n", size);
         combinedList.size = 0;
         return combinedList;
     }
@@ -1176,10 +1174,10 @@ MoveList filterChecks(MoveList moves, int isWhite) {
     // Check if memory allocation succeeds
     Move * move = (Move *)malloc(sizeof(Move) * moves.size);
     
-    // if (move == NULL) {
-    //     printf("ERROR: Memory allocation failed\n");
-    //     return (MoveList){0};
-    // }
+    if (move == NULL) {
+        fprintf(stderr, "ERROR: Memory allocation failed in filterChecks\n");
+        return (MoveList){.moves = NULL, .size = 0};
+    }
 
     int index = 0;
 
@@ -1222,8 +1220,10 @@ MoveList filterChecks(MoveList moves, int isWhite) {
     
     // Free memory if no valid moves found
     if (index == 0) {
-        //free(validmoves.moves);
-        return (MoveList){0};
+        free(validmoves.moves);  // Free the allocated memory
+        validmoves.moves = NULL;  // Set to NULL to prevent dangling pointer
+        validmoves.size = 0;
+        return validmoves;
     }
 
     return validmoves;
@@ -1248,19 +1248,19 @@ MoveList findMoves(int isWhite) {
     
 
     //rooks,queens,ponds
-    MoveList RookPondQueen = combineMoveLists(combineMoveLists(pondmoves,rookmoves),queenmoves); 
-    free(rookmoves.moves);
-    free(pondmoves.moves);
-    free(queenmoves.moves);
+    MoveList RookPondQueen = combineMoveLists(combineMoveLists(pondmoves,rookmoves),queenmoves);
+    if (rookmoves.moves) free(rookmoves.moves);
+    if (pondmoves.moves) free(pondmoves.moves);
+    if (queenmoves.moves) free(queenmoves.moves);
 
-    MoveList KingKnightBishop = combineMoveLists(combineMoveLists(kingmoves,knightmoves),bishopmoves); 
-    free(kingmoves.moves);
-    free(knightmoves.moves);
-    free(bishopmoves.moves);
+    MoveList KingKnightBishop = combineMoveLists(combineMoveLists(kingmoves,knightmoves),bishopmoves);
+    if (kingmoves.moves) free(kingmoves.moves);
+    if (knightmoves.moves) free(knightmoves.moves);
+    if (bishopmoves.moves) free(bishopmoves.moves);
    
-    moves = combineMoveLists(RookPondQueen,KingKnightBishop); 
-    free(RookPondQueen.moves);
-    free(KingKnightBishop.moves);
+    moves = combineMoveLists(RookPondQueen,KingKnightBishop);
+    if (RookPondQueen.moves) free(RookPondQueen.moves);
+    if (KingKnightBishop.moves) free(KingKnightBishop.moves);
     
     
 
@@ -1364,14 +1364,15 @@ int move_piece(Move move, int isWhite) {
  
  
 
-    int c;
-        if((type == 6) && (sqaure & all_VaildMoves()) != 0) {
-            if(((Piece >> 2) == sqaure))  {
-                c = isWhite ? (2) : (4);
-            }else if((Piece << 2) == sqaure) {
-                c = isWhite ? (1) : (3);
-            }
-        } 
+    int c = 0;
+    // Castling detection: king moved two squares horizontally (avoid global all_VaildMoves())
+    if(type == 6) {
+        if((Piece >> 2) == sqaure) {
+            c = isWhite ? 2 : 4; // king side
+        } else if((Piece << 2) == sqaure) {
+            c = isWhite ? 1 : 3; // queen side
+        }
+    }
 
 
 
@@ -1393,11 +1394,8 @@ int move_piece(Move move, int isWhite) {
     }
 //////
  
-    if((sqaure & all_VaildMoves()) == 0) {
-        //printf("InVaild move, Sqaure trying to move to was not in ValidMoves bitboard\n");
-        
-        return -1;
-    }
+    // Removed expensive global all_VaildMoves() presence test; each piece case validates
+    // the move with its own generator. Keeping the global union was a major bottleneck.
 
     if(type == 0) {
         //printf("Piece not found");
@@ -1852,39 +1850,90 @@ void undocapture(Move made, int captured) {
 
 }
 
+// Helper function to add positional bonuses for a bitboard
+// Inline to reduce call overhead during evaluation
+static inline int eval_piece_positions(BitBoard pieces, const int* posTable) {
+    int score = 0;
+    BitBoard temp = pieces;
+    
+    while (temp) {
+        BitBoard piece_bb = temp & -temp;  // Extract LSB
+        int square = __builtin_ctzll(piece_bb);  // Get bit position (0-63)
+        score += posTable[square];
+        temp &= temp - 1;  // Clear LSB
+    }
+    
+    return score;
+}
 
-
-// Material-only evaluation from White's perspective (positive favors White)
+// Material + positional evaluation from White's perspective (positive favors White)
 int eval_position() {
     int WhiteScore = 0;
     int BlackScore = 0;
-    //TODO:
-    /*
-        Add positional evaluation
-            - Create piece-square tables for each piece type
-            - Use these tables to add/subtract points based on piece positions
-        Add points for checks and checkmates
-            - Checkmate should add max points to the side delivering it
-            - Being in check should subtract points from the side in check
-    */
-
-
-    WhiteScore += (countSetBits(White_ponds) * PondValue);
-    WhiteScore += (countSetBits(White_knights) * KnightValue);
-    WhiteScore += (countSetBits(White_rooks) * RookValue);
-    WhiteScore += (countSetBits(White_queen) * QueenValue);
-    WhiteScore += (countSetBits(White_bishops) * BishopValue);
     
+    // Material evaluation
+    int numberOfPondsWhite = countSetBits(White_ponds);
+    int numberOfPondsBlack = countSetBits(Black_ponds);
+    int numberOfKnightsWhite = countSetBits(White_knights);
+    int numberOfKnightsBlack = countSetBits(Black_knights);
+    int numberOfRooksWhite = countSetBits(White_rooks);
+    int numberOfRooksBlack = countSetBits(Black_rooks);
+    int numberOfQueensWhite = countSetBits(White_queen);
+    int numberOfQueensBlack = countSetBits(Black_queen);
+    int numberOfBishopsWhite = countSetBits(White_bishops);
+    int numberOfBishopsBlack = countSetBits(Black_bishops);
 
-    BlackScore += (countSetBits(Black_ponds) * PondValue);
-    BlackScore += (countSetBits(Black_knights) * KnightValue);
-    BlackScore += (countSetBits(Black_rooks) * RookValue);
-    BlackScore += (countSetBits(Black_queen) * QueenValue);
-    BlackScore += (countSetBits(Black_bishops) * BishopValue);
+    WhiteScore += (numberOfPondsWhite * 100);      // 100 centipawns = 1 pawn
+    WhiteScore += (numberOfKnightsWhite * 320);    // Knights worth ~3.2 pawns
+    WhiteScore += (numberOfBishopsWhite * 330);    // Bishops slightly better than knights
+    WhiteScore += (numberOfRooksWhite * 500);      // Rooks worth 5 pawns
+    WhiteScore += (numberOfQueensWhite * 900);     // Queens worth 9 pawns
+    
+    BlackScore += (numberOfPondsBlack * 100);
+    BlackScore += (numberOfKnightsBlack * 320);
+    BlackScore += (numberOfBishopsBlack * 330);
+    BlackScore += (numberOfRooksBlack * 500);
+    BlackScore += (numberOfQueensBlack * 900);
+
+    // Positional evaluation (using optimized constant tables)
+    // Multiply by 10 to make position matter more (0-30 points instead of 0-3)
+    if (White_ponds) WhiteScore += eval_piece_positions(White_ponds, PAWN_POSITION_TABLE) * 10;
+    if (Black_ponds) BlackScore += eval_piece_positions(Black_ponds, PAWN_POSITION_TABLE) * 10;
+    
+    if (White_knights) WhiteScore += eval_piece_positions(White_knights, KNIGHT_POSITION_TABLE) * 10;
+    if (Black_knights) BlackScore += eval_piece_positions(Black_knights, KNIGHT_POSITION_TABLE) * 10;
+    
+    if (White_bishops) WhiteScore += eval_piece_positions(White_bishops, BISHOP_POSITION_TABLE) * 10;
+    if (Black_bishops) BlackScore += eval_piece_positions(Black_bishops, BISHOP_POSITION_TABLE) * 10;
+    
+    if (White_rooks) WhiteScore += eval_piece_positions(White_rooks, ROOK_POSITION_TABLE) * 10;
+    if (Black_rooks) BlackScore += eval_piece_positions(Black_rooks, ROOK_POSITION_TABLE) * 10;
+    
+    if (White_queen) WhiteScore += eval_piece_positions(White_queen, QUEEN_POSITION_TABLE) * 10;
+    if (Black_queen) BlackScore += eval_piece_positions(Black_queen, QUEEN_POSITION_TABLE) * 10;
+    
+    if (White_king) WhiteScore += eval_piece_positions(White_king, KING_POSITION_TABLE) * 10;
+    if (Black_king) BlackScore += eval_piece_positions(Black_king, KING_POSITION_TABLE) * 10;
+
+    // King Safety: Penalize if king is in check (high priority)
+    if (isCheck(1)) {  // White king in check
+        WhiteScore -= 50;
+    }
+    if (isCheck(0)) {  // Black king in check
+        BlackScore -= 50;
+    }
+
+    // Development bonus: encourage moving pieces off back rank in opening
+    BitBoard white_back_rank = 0xFF;  // Bottom row (ranks 1)
+    BitBoard black_back_rank = 0xFF00000000000000ULL;  // Top row (rank 8)
+    
+    int white_undeveloped = countSetBits((White_knights | White_bishops) & white_back_rank);
+    int black_undeveloped = countSetBits((Black_knights | Black_bishops) & black_back_rank);
+    
+    WhiteScore -= white_undeveloped * 15;  // -15 per undeveloped minor piece
+    BlackScore -= black_undeveloped * 15;
 
     return (WhiteScore - BlackScore);
-
-    
 }
     
 int userMove(int isWhite) {
@@ -1926,8 +1975,9 @@ int userMove(int isWhite) {
 
 
 Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
-    Move bestMove;
+    Move bestMove = (Move){0};  // CRITICAL FIX: Initialize to zero
     int bestScore = (isMaximizingPlayer) ? NINF : INF;
+    int foundValidMove = 0;  // Track if we found at least one move
 
     if (depth == 0) {
         Move dummyMove = (Move){0};
@@ -1950,8 +2000,10 @@ Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
         return terminal;
     }
 
+    // FIXED: Simplified single-pass loop - the double-pass was causing crashes
     for (int i = 0; i < moves.size; i++) {
         Move move = moves.moves[i];
+        
         movesEvaluated++;  // Increment counter for each move evaluated
 
         // Snapshot castling rights
@@ -1973,6 +2025,7 @@ Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
                 bestScore = eval.score;
                 bestMove = move;
                 bestMove.score = bestScore;
+                foundValidMove = 1;
             }
             if (eval.score > alpha) alpha = eval.score;
         } else {
@@ -1981,13 +2034,20 @@ Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
                 bestScore = eval.score;
                 bestMove = move;
                 bestMove.score = bestScore;
+                foundValidMove = 1;
             }
             if (eval.score < beta) beta = eval.score;
         }
 
         if (beta <= alpha) {
-            break;
+            break;  // Alpha-beta pruning
         }
+    }
+
+    // Safety check: if no move was better (shouldn't happen but prevents crashes)
+    if (!foundValidMove && moves.size > 0) {
+        bestMove = moves.moves[0];
+        bestMove.score = bestScore;
     }
 
     if (moves.moves) free(moves.moves);
