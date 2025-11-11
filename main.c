@@ -10,7 +10,7 @@
 typedef uint64_t BitBoard;
 
 #define MAX_MOVES 1000000
-#define DEPTH 5
+#define BASE_DEPTH 4  // Base depth for midgame, will be adjusted based on game phase
 
 int WcastleL = 1;
 int WcastleR = 1;
@@ -21,11 +21,11 @@ int BcastleR = 1;
 #define INF 2147483647
 #define NINF -2147483647 
 
-#define PondValue 1
-#define RookValue 5
-#define BishopValue 3
-#define QueenValue 9
-#define KnightValue 3
+#define PondValue 100
+#define RookValue 500
+#define BishopValue 320
+#define QueenValue 900
+#define KnightValue 300
 //Init Main Boards, all of the white pieces,black pieces, and all pieces
 BitBoard Main;
 BitBoard White;
@@ -892,8 +892,9 @@ MoveList find_allknights(int isWhite) {
         return (MoveList){0};
 
     }
-    //Move moves[size*4];
-    Move *moves = (Move *)malloc(sizeof(Move) * (size*4));
+    // Each knight can have up to 8 legal moves; allocate accordingly
+    // Using size*8 prevents buffer overruns that could corrupt search state
+    Move *moves = (Move *)malloc(sizeof(Move) * (size * 8));
 
     BitBoard Piece_LSB;
     BitBoard Temp = isWhite ? White_knights : Black_knights;
@@ -913,42 +914,51 @@ MoveList find_allknights(int isWhite) {
         tempmove8 = find_downshortLright(Piece_LSB, isWhite);
 
         if (tempmove8.Square) {
+            // Guard against any unforeseen overflow
+            if (index >= size * 8) break;
             moves[index].Square = tempmove8.Square;
             moves[index].Piece = tempmove8.Piece;
             index++;
         }
         
         if (tempmove7.Square) {
+            if (index >= size * 8) break;
             moves[index].Square = tempmove7.Square;
             moves[index].Piece = tempmove7.Piece;
             index++;
         }
         if (tempmove6.Square) {
+            if (index >= size * 8) break;
             moves[index].Square = tempmove6.Square;
             moves[index].Piece = tempmove6.Piece;
             index++;
         }
         if (tempmove5.Square) {
+            if (index >= size * 8) break;
             moves[index].Square = tempmove5.Square;
             moves[index].Piece = tempmove5.Piece;
             index++;
         }
         if (tempmove4.Square) {
+            if (index >= size * 8) break;
             moves[index].Square = tempmove4.Square;
             moves[index].Piece = tempmove4.Piece;
             index++;
         }
         if (tempmove3.Square) {
+            if (index >= size * 8) break;
             moves[index].Square = tempmove3.Square;
             moves[index].Piece = tempmove3.Piece;
             index++;
         }
         if (tempmove2.Square) {
+            if (index >= size * 8) break;
             moves[index].Square = tempmove2.Square;
             moves[index].Piece = tempmove2.Piece;
             index++;
         }
         if (tempmove.Square) {
+            if (index >= size * 8) break;
             moves[index].Square = tempmove.Square;
             moves[index].Piece = tempmove.Piece;
             index++;
@@ -1053,40 +1063,43 @@ MoveList find_allking(int isWhite) {
 
 Move castlemove(BitBoard Piece,int isWhite) {
     Move move;
-    BitBoard A = Piece & FileA;
     
-    
-    if(castle(isWhite)) {
-        if(isWhite) {
-            if(A) {
-                move.Piece = E1;
-                move.Square = C1;
-                move.castle = 1;
-                
-            }else {
-                //File H
-                move.Piece = E1;
-                move.Square = G1;
-                move.castle = 2;
-            }
-        }else {
-            if(A) {
-                move.Piece = E8;
-                move.Square = C8;
-                move.castle = 3;
-                
-            }else {
-                //File H
-                move.Piece = E8;
-                move.Square = G8;
-                move.castle = 4;
-            }
-
+    // CRITICAL FIX: Only allow castling if the rook is on its starting square
+    // AND the corresponding castling right is still available
+    if(isWhite) {
+        // White queenside castle: rook must be on A1 and WcastleL must be true
+        if((Piece == A1) && (WcastleL) && ((Main & castleWL) == 0)) {
+            move.Piece = E1;
+            move.Square = C1;
+            move.castle = 1;
+            return move;
         }
-    }else {
-        return (Move){0};
+        // White kingside castle: rook must be on H1 and WcastleR must be true
+        else if((Piece == H1) && (WcastleR) && ((Main & castleWR) == 0)) {
+            move.Piece = E1;
+            move.Square = G1;
+            move.castle = 2;
+            return move;
+        }
+    } else {
+        // Black queenside castle: rook must be on A8 and BcastleL must be true
+        if((Piece == A8) && (BcastleL) && ((Main & castleBL) == 0)) {
+            move.Piece = E8;
+            move.Square = C8;
+            move.castle = 3;
+            return move;
+        }
+        // Black kingside castle: rook must be on H8 and BcastleR must be true
+        else if((Piece == H8) && BcastleR && ((Main & castleBR) == 0)) {
+            move.Piece = E8;
+            move.Square = G8;
+            move.castle = 4;
+            return move;
+        }
     }
-    return move;
+    
+    // No valid castle move
+    return (Move){0};
 }
 
 MoveList combineMoveLists(MoveList list1, MoveList list2) {
@@ -1201,6 +1214,8 @@ MoveList filterChecks(MoveList moves, int isWhite) {
         moves.moves[i].prevState.Black_queen = Black_queen;
         moves.moves[i].prevState.Black_king = Black_king;
         
+        int savedCount = count;  // Save count before move_piece (which calls StoreMove)
+        
         int ok = move_piece(moves.moves[i], isWhite);
         if (ok == 1) {
             // Check if the move doesn't result in a check
@@ -1208,10 +1223,25 @@ MoveList filterChecks(MoveList moves, int isWhite) {
                 move[index] = moves.moves[i];
                 index++;
             }
-            unmakeMove();
+            // CRITICAL FIX: Restore from saved state instead of unmakeMove()
+            // unmakeMove() relies on MoveHistory[count] which gets corrupted by StoreMove calls
+            White_ponds = moves.moves[i].prevState.White_ponds;
+            White_knights = moves.moves[i].prevState.White_knights;
+            White_rooks = moves.moves[i].prevState.White_rooks;
+            White_bishops = moves.moves[i].prevState.White_bishops;
+            White_queen = moves.moves[i].prevState.White_queen;
+            White_king = moves.moves[i].prevState.White_king;
+            Black_ponds = moves.moves[i].prevState.Black_ponds;
+            Black_knights = moves.moves[i].prevState.Black_knights;
+            Black_rooks = moves.moves[i].prevState.Black_rooks;
+            Black_bishops = moves.moves[i].prevState.Black_bishops;
+            Black_queen = moves.moves[i].prevState.Black_queen;
+            Black_king = moves.moves[i].prevState.Black_king;
+            updateAll();
         }
-        // restore castling rights regardless
+        // restore castling rights and move history count regardless
         WcastleL = WcL; WcastleR = WcR; BcastleL = BcL; BcastleR = BcR;
+        count = savedCount;
     }
 
     validmoves.moves = move;
@@ -1282,7 +1312,6 @@ int take(BitBoard sqaure, int isWhite) {
         {
             case 1:
                 White_ponds = (White_ponds & ~sqaure);
-
                 break;
             case 2:
                 White_knights = (White_knights & ~sqaure);
@@ -1292,6 +1321,9 @@ int take(BitBoard sqaure, int isWhite) {
                 break;
             case 4:
                 White_rooks = (White_rooks & ~sqaure);
+                // If a rook is captured on its starting square, disable that side's castling
+                if(sqaure == H1) WcastleR = 0;
+                if(sqaure == A1) WcastleL = 0;
                 break;
             case 5:
                 White_queen = (White_queen & ~sqaure);
@@ -1308,7 +1340,6 @@ int take(BitBoard sqaure, int isWhite) {
         {
             case 1:
                 Black_ponds = (Black_ponds & ~sqaure);
-                
                 break;
             case 2:
                 Black_knights = (Black_knights & ~sqaure);
@@ -1318,6 +1349,9 @@ int take(BitBoard sqaure, int isWhite) {
                 break;
             case 4:
                 Black_rooks = (Black_rooks & ~sqaure);
+                // If a rook is captured on its starting square, disable that side's castling
+                if(sqaure == H8) BcastleR = 0;
+                if(sqaure == A8) BcastleL = 0;
                 break;
             case 5:
                 Black_queen = (Black_queen & ~sqaure);
@@ -1526,13 +1560,12 @@ int move_piece(Move move, int isWhite) {
                     White_rooks = (White_rooks & ~Piece) | sqaure;
                     //updateAll();
                     StoreMove(move);
-                    if(Piece & FileH) {
+                    // Only disable castling if rook moves FROM its starting square
+                    if(Piece == H1) {
                         WcastleR = 0;
-                       // BcastleR = 0;
                     }
-                    if(Piece & FileA) {
+                    if(Piece == A1) {
                         WcastleL = 0;
-                        //BcastleL = 0;
                     }
                     return 1;
 
@@ -1541,10 +1574,11 @@ int move_piece(Move move, int isWhite) {
                     White_rooks = (White_rooks & ~Piece) | sqaure;
                     //updateAll();
                     StoreMove(move);
-                    if(Piece & FileH) {
+                    // Only disable castling if rook moves FROM its starting square
+                    if(Piece == H1) {
                         WcastleR = 0;
                     }
-                    if(Piece & FileA) {
+                    if(Piece == A1) {
                         WcastleL = 0;
                     }
                     return 1;
@@ -1669,10 +1703,11 @@ int move_piece(Move move, int isWhite) {
                     Black_rooks = (Black_rooks & ~Piece) | sqaure;
                     //updateAll();
                     StoreMove(move);
-                    if(Piece & FileH) {
+                    // Only disable castling if rook moves FROM its starting square
+                    if(Piece == H8) {
                         BcastleR = 0;
                     }
-                    if(Piece & FileA) {
+                    if(Piece == A8) {
                         BcastleL = 0;
                     }
                     return 1;
@@ -1681,10 +1716,11 @@ int move_piece(Move move, int isWhite) {
                     Black_rooks = (Black_rooks & ~Piece) | sqaure;
                    // updateAll();
                     StoreMove(move);
-                    if(Piece & FileH) {
+                    // Only disable castling if rook moves FROM its starting square
+                    if(Piece == H8) {
                         BcastleR = 0;
                     }
-                    if(Piece & FileA) {
+                    if(Piece == A8) {
                         BcastleL = 0;
                     }
                     return 1;
@@ -1758,6 +1794,10 @@ int makeMove(Move move, int isWhite) {
     move.prevState.Black_queen = Black_queen;
     move.prevState.Black_king = Black_king;
 
+    // Also snapshot castling rights and history count to fully restore on invalid moves
+    int savedWcL = WcastleL, savedWcR = WcastleR, savedBcL = BcastleL, savedBcR = BcastleR;
+    int savedCount = count;
+
     if(move_piece(move,isWhite) == -1) {
         printf("Failed to move piece\n");
         return 0;
@@ -1779,6 +1819,9 @@ int makeMove(Move move, int isWhite) {
         Black_bishops = move.prevState.Black_bishops;
         Black_queen = move.prevState.Black_queen;
         Black_king = move.prevState.Black_king;
+        // Restore castling rights and move history count that may have changed
+        WcastleL = savedWcL; WcastleR = savedWcR; BcastleL = savedBcL; BcastleR = savedBcR;
+        count = savedCount;
         updateAll();
         return 0;
     }
@@ -1874,6 +1917,8 @@ int eval_position() {
     // Material evaluation
     int numberOfPondsWhite = countSetBits(White_ponds);
     int numberOfPondsBlack = countSetBits(Black_ponds);
+    
+
     int numberOfKnightsWhite = countSetBits(White_knights);
     int numberOfKnightsBlack = countSetBits(Black_knights);
     int numberOfRooksWhite = countSetBits(White_rooks);
@@ -1883,37 +1928,36 @@ int eval_position() {
     int numberOfBishopsWhite = countSetBits(White_bishops);
     int numberOfBishopsBlack = countSetBits(Black_bishops);
 
-    WhiteScore += (numberOfPondsWhite * 100);      // 100 centipawns = 1 pawn
-    WhiteScore += (numberOfKnightsWhite * 320);    // Knights worth ~3.2 pawns
-    WhiteScore += (numberOfBishopsWhite * 330);    // Bishops slightly better than knights
-    WhiteScore += (numberOfRooksWhite * 500);      // Rooks worth 5 pawns
-    WhiteScore += (numberOfQueensWhite * 900);     // Queens worth 9 pawns
+    WhiteScore += (numberOfPondsWhite * PondValue);    
+    WhiteScore += (numberOfKnightsWhite * KnightValue);    
+    WhiteScore += (numberOfBishopsWhite * BishopValue);   
+    WhiteScore += (numberOfRooksWhite * RookValue);      
+    WhiteScore += (numberOfQueensWhite * QueenValue);    
     
-    BlackScore += (numberOfPondsBlack * 100);
-    BlackScore += (numberOfKnightsBlack * 320);
-    BlackScore += (numberOfBishopsBlack * 330);
-    BlackScore += (numberOfRooksBlack * 500);
-    BlackScore += (numberOfQueensBlack * 900);
+    BlackScore += (numberOfPondsBlack * PondValue);
+    BlackScore += (numberOfKnightsBlack * KnightValue);
+    BlackScore += (numberOfBishopsBlack * BishopValue);
+    BlackScore += (numberOfRooksBlack * RookValue);
+    BlackScore += (numberOfQueensBlack * QueenValue);
 
-    // Positional evaluation (using optimized constant tables)
-    // Multiply by 10 to make position matter more (0-30 points instead of 0-3)
-    if (White_ponds) WhiteScore += eval_piece_positions(White_ponds, PAWN_POSITION_TABLE) * 10;
-    if (Black_ponds) BlackScore += eval_piece_positions(Black_ponds, PAWN_POSITION_TABLE) * 10;
+    // Positional evaluation
+    if (White_ponds) WhiteScore += eval_piece_positions(White_ponds, WHITE_PAWN_POSITION_TABLE);
+    if (Black_ponds) BlackScore += eval_piece_positions(Black_ponds, BLACK_PAWN_POSITION_TABLE);
     
-    if (White_knights) WhiteScore += eval_piece_positions(White_knights, KNIGHT_POSITION_TABLE) * 10;
-    if (Black_knights) BlackScore += eval_piece_positions(Black_knights, KNIGHT_POSITION_TABLE) * 10;
+    if (White_knights) WhiteScore += eval_piece_positions(White_knights, WHITE_KNIGHT_POSITION_TABLE);
+    if (Black_knights) BlackScore += eval_piece_positions(Black_knights, BLACK_KNIGHT_POSITION_TABLE);
     
-    if (White_bishops) WhiteScore += eval_piece_positions(White_bishops, BISHOP_POSITION_TABLE) * 10;
-    if (Black_bishops) BlackScore += eval_piece_positions(Black_bishops, BISHOP_POSITION_TABLE) * 10;
+    if (White_bishops) WhiteScore += eval_piece_positions(White_bishops, WHITE_BISHOP_POSITION_TABLE);
+    if (Black_bishops) BlackScore += eval_piece_positions(Black_bishops, BLACK_BISHOP_POSITION_TABLE);
     
-    if (White_rooks) WhiteScore += eval_piece_positions(White_rooks, ROOK_POSITION_TABLE) * 10;
-    if (Black_rooks) BlackScore += eval_piece_positions(Black_rooks, ROOK_POSITION_TABLE) * 10;
+    if (White_rooks) WhiteScore += eval_piece_positions(White_rooks, WHITE_ROOK_POSITION_TABLE);
+    if (Black_rooks) BlackScore += eval_piece_positions(Black_rooks, BLACK_ROOK_POSITION_TABLE);
     
-    if (White_queen) WhiteScore += eval_piece_positions(White_queen, QUEEN_POSITION_TABLE) * 10;
-    if (Black_queen) BlackScore += eval_piece_positions(Black_queen, QUEEN_POSITION_TABLE) * 10;
+    if (White_queen) WhiteScore += eval_piece_positions(White_queen, WHITE_QUEEN_POSITION_TABLE);
+    if (Black_queen) BlackScore += eval_piece_positions(Black_queen, BLACK_QUEEN_POSITION_TABLE);
     
-    if (White_king) WhiteScore += eval_piece_positions(White_king, KING_POSITION_TABLE) * 10;
-    if (Black_king) BlackScore += eval_piece_positions(Black_king, KING_POSITION_TABLE) * 10;
+    if (White_king) WhiteScore += eval_piece_positions(White_king, WHITE_KING_POSITION_TABLE);
+    if (Black_king) BlackScore += eval_piece_positions(Black_king, BLACK_KING_POSITION_TABLE);
 
     // King Safety: Penalize if king is in check (high priority)
     if (isCheck(1)) {  // White king in check
@@ -1922,16 +1966,6 @@ int eval_position() {
     if (isCheck(0)) {  // Black king in check
         BlackScore -= 50;
     }
-
-    // Development bonus: encourage moving pieces off back rank in opening
-    BitBoard white_back_rank = 0xFF;  // Bottom row (ranks 1)
-    BitBoard black_back_rank = 0xFF00000000000000ULL;  // Top row (rank 8)
-    
-    int white_undeveloped = countSetBits((White_knights | White_bishops) & white_back_rank);
-    int black_undeveloped = countSetBits((Black_knights | Black_bishops) & black_back_rank);
-    
-    WhiteScore -= white_undeveloped * 15;  // -15 per undeveloped minor piece
-    BlackScore -= black_undeveloped * 15;
 
     return (WhiteScore - BlackScore);
 }
@@ -1975,49 +2009,144 @@ int userMove(int isWhite) {
 
 
 Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
-    Move bestMove = (Move){0};  // CRITICAL FIX: Initialize to zero
+    Move bestMove = (Move){0};
     int bestScore = (isMaximizingPlayer) ? NINF : INF;
-    int foundValidMove = 0;  // Track if we found at least one move
+    int foundValidMove = 0;  
+
+    // Safety check: at depth 5, we expect ~1-5M evaluations in midgame
+    // 50M is a reasonable upper bound to prevent infinite loops from bugs
+    if (movesEvaluated > 50000000) {
+        fprintf(stderr, "WARNING: Search exceeded 50M nodes, aborting to prevent crash\n");
+        Move emergency = (Move){0};
+        emergency.score = eval_position();
+        return emergency;
+    }
 
     if (depth == 0) {
         Move dummyMove = (Move){0};
         int eval = eval_position();
-        // eval_position returns positive for White advantage
-        // When it's White's turn (isMaximizingPlayer=1), use eval as-is
-        // When it's Black's turn (isMaximizingPlayer=0), negate it so Black maximizes its advantage
+        // eval_position returns a White-centric score (positive favors White).
+        // We do NOT negate at the leaf: White maximizes this score and Black minimizes it.
+        // If you switch to a negamax formulation later, you'd negate when changing sides.
         dummyMove.score = eval;
         return dummyMove;
     }
 
     MoveList moves = findMoves(isMaximizingPlayer);
 
+    // Check for memory allocation failure
+    if (moves.moves == NULL && moves.size > 0) {
+        fprintf(stderr, "CRITICAL: findMoves() allocation failed in minimax\n");
+        Move emergency = (Move){0};
+        emergency.score = eval_position();
+        return emergency;
+    }
+
     // Terminal position: no legal moves
     if (moves.size == 0) {
         Move terminal = (Move){0};
         int inCheck = isCheck(isMaximizingPlayer);
-        terminal.score = inCheck ? (isMaximizingPlayer ? NINF + 1 : INF - 1) : 0;
+        if (inCheck) {
+            // Checkmate: prefer quicker mates by making score depth-dependent
+            // If White is checkmated (isMaximizingPlayer=1), return large negative
+            // If Black is checkmated (isMaximizingPlayer=0), return large positive
+            terminal.score = isMaximizingPlayer ? (NINF + depth) : (INF - depth);
+        } else {
+            // Stalemate
+            terminal.score = 0;
+        }
         if (moves.moves) free(moves.moves);
         return terminal;
     }
 
-    // FIXED: Simplified single-pass loop - the double-pass was causing crashes
+    // Move ordering: prioritize captures for better alpha-beta pruning
+    // This can reduce nodes searched by 10-100x at depth 5
+    BitBoard enemyPieces = isMaximizingPlayer ? Black : White;
+    for (int i = 0; i < moves.size - 1; i++) {
+        for (int j = i + 1; j < moves.size; j++) {
+            int iCaptures = (moves.moves[i].Square & enemyPieces) ? 1 : 0;
+            int jCaptures = (moves.moves[j].Square & enemyPieces) ? 1 : 0;
+            
+            // Swap if j is a capture and i is not (captures first)
+            if (jCaptures > iCaptures) {
+                Move temp = moves.moves[i];
+                moves.moves[i] = moves.moves[j];
+                moves.moves[j] = temp;
+            }
+        }
+    }
+
     for (int i = 0; i < moves.size; i++) {
         Move move = moves.moves[i];
         
         movesEvaluated++;  // Increment counter for each move evaluated
 
+        // CRITICAL FIX: Save complete board state BEFORE makeMove
+        // This prevents corruption from StoreMove() calls inside move_piece()
+        BoardState savedState;
+        savedState.White_ponds = White_ponds;
+        savedState.White_knights = White_knights;
+        savedState.White_rooks = White_rooks;
+        savedState.White_bishops = White_bishops;
+        savedState.White_queen = White_queen;
+        savedState.White_king = White_king;
+        savedState.Black_ponds = Black_ponds;
+        savedState.Black_knights = Black_knights;
+        savedState.Black_rooks = Black_rooks;
+        savedState.Black_bishops = Black_bishops;
+        savedState.Black_queen = Black_queen;
+        savedState.Black_king = Black_king;
+        
         // Snapshot castling rights
         int WcL = WcastleL, WcR = WcastleR, BcL = BcastleL, BcR = BcastleR;
+        
+        // Save move history count to restore after (since move_piece calls StoreMove)
+        int savedCount = count;
 
-        // Make move
-        makeMove(move, isMaximizingPlayer);
+        // Make move (skip if move is somehow invalid, though findMoves() should filter)
+        int made = makeMove(move, isMaximizingPlayer);
+        if (!made) {
+            // Ensure full restore in case any side effects occurred
+            White_ponds = savedState.White_ponds;
+            White_knights = savedState.White_knights;
+            White_rooks = savedState.White_rooks;
+            White_bishops = savedState.White_bishops;
+            White_queen = savedState.White_queen;
+            White_king = savedState.White_king;
+            Black_ponds = savedState.Black_ponds;
+            Black_knights = savedState.Black_knights;
+            Black_rooks = savedState.Black_rooks;
+            Black_bishops = savedState.Black_bishops;
+            Black_queen = savedState.Black_queen;
+            Black_king = savedState.Black_king;
+            updateAll();
+            WcastleL = WcL; WcastleR = WcR; BcastleL = BcL; BcastleR = BcR;
+            count = savedCount;
+            continue;
+        }
 
         Move eval = minimax(depth - 1, alpha, beta, !isMaximizingPlayer);
 
-        // Undo move
-        unmakeMove();
+        // CRITICAL FIX: Restore board state manually (don't use unmakeMove which relies on corrupted MoveHistory)
+        White_ponds = savedState.White_ponds;
+        White_knights = savedState.White_knights;
+        White_rooks = savedState.White_rooks;
+        White_bishops = savedState.White_bishops;
+        White_queen = savedState.White_queen;
+        White_king = savedState.White_king;
+        Black_ponds = savedState.Black_ponds;
+        Black_knights = savedState.Black_knights;
+        Black_rooks = savedState.Black_rooks;
+        Black_bishops = savedState.Black_bishops;
+        Black_queen = savedState.Black_queen;
+        Black_king = savedState.Black_king;
+        updateAll();
+        
         // Restore castling rights
         WcastleL = WcL; WcastleR = WcR; BcastleL = BcL; BcastleR = BcR;
+        
+        // Restore move history count (undo any StoreMove calls during search)
+        count = savedCount;
 
         if (isMaximizingPlayer) {
             // White maximizes the score
@@ -2026,8 +2155,9 @@ Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
                 bestMove = move;
                 bestMove.score = bestScore;
                 foundValidMove = 1;
+                // Update alpha to the best score found so far
+                if (bestScore > alpha) alpha = bestScore;
             }
-            if (eval.score > alpha) alpha = eval.score;
         } else {
             // Black minimizes the score (since eval is from White's perspective)
             if (eval.score < bestScore) {
@@ -2035,8 +2165,9 @@ Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
                 bestMove = move;
                 bestMove.score = bestScore;
                 foundValidMove = 1;
+                // Update beta to the best score found so far
+                if (bestScore < beta) beta = bestScore;
             }
-            if (eval.score < beta) beta = eval.score;
         }
 
         if (beta <= alpha) {
@@ -2054,19 +2185,121 @@ Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
     return bestMove;
 }
 
+// Calculate adaptive search depth based on game phase
+int getAdaptiveDepth() {
+    // Count total pieces on the board (excluding kings)
+    int whitePieces = countSetBits(White_ponds) + countSetBits(White_knights) + 
+                      countSetBits(White_rooks) + countSetBits(White_bishops) + 
+                      countSetBits(White_queen);
+    int blackPieces = countSetBits(Black_ponds) + countSetBits(Black_knights) + 
+                      countSetBits(Black_rooks) + countSetBits(Black_bishops) + 
+                      countSetBits(Black_queen);
+    int totalPieces = whitePieces + blackPieces;
+    
+    // Game phase determination:
+    // Opening/Early game: 26-32 pieces → depth 3-4 (too many moves, slower)
+    // Midgame: 13-25 pieces → depth 5 (balanced)
+    // Endgame: 1-12 pieces → depth 6-8 (fewer moves, can search deeper)
+    
+    if (totalPieces >= 26) {
+        return BASE_DEPTH - 2;  // Opening: many pieces, many moves
+    } else if (totalPieces >= 20) {
+        return BASE_DEPTH - 1;  // Early midgame
+    } else if (totalPieces >= 13) {
+        return BASE_DEPTH;  // Midgame: use base depth (5)
+    } else if (totalPieces >= 8) {
+        return BASE_DEPTH + 1;  // Early endgame: fewer pieces, can go deeper
+    } else if (totalPieces >= 4) {
+        return BASE_DEPTH + 2;  // Late endgame: very few pieces
+    } else {
+        return BASE_DEPTH + 3;  // King vs King + piece: search very deep
+    }
+}
 
 Move bestMove(int isWhite) {
 
-    int depth = DEPTH;
+    int depth = getAdaptiveDepth();  // Use adaptive depth instead of fixed
     movesEvaluated = 0;  // Reset counter before search
     
+    // Calculate total pieces for phase display
+    int totalPieces = countSetBits(White_ponds | White_knights | White_rooks | 
+                                   White_bishops | White_queen | Black_ponds | 
+                                   Black_knights | Black_rooks | Black_bishops | Black_queen);
+    const char* phase = (totalPieces >= 20) ? "Opening/Midgame" : 
+                        (totalPieces >= 13) ? "Midgame" : 
+                        (totalPieces >= 8) ? "Endgame" : "Late Endgame";
+    
+    printf("=== AI Search: %s (depth %d, %d pieces) ===\n", phase, depth, totalPieces);
+    printf("Position eval: %d\n", eval_position());
+    
     Move result = minimax(depth,NINF, INF, isWhite);
-    
     // Print stats
-    printf("Moves evaluated: %d\n", movesEvaluated);
-    printf("Best move found: from=0x%llx to=0x%llx, score=%d\n", 
-           result.Piece, result.Square, result.score);
-    
+    printf("Search complete! Nodes: %d (%.1fM), Best score: %d\n", 
+           movesEvaluated, movesEvaluated / 1000000.0, result.score);
+    printf("Best move: from=0x%llx to=0x%llx\n", result.Piece, result.Square);
+    // The score stored in result is the leaf (PV) evaluation after full depth search.
+    // For GUI display we usually want the evaluation of the POSITION AFTER this move
+    // (the root child position), not the distant leaf. We temporarily make the move,
+    // evaluate, then undo it and overwrite result.score with the immediate evaluation.
+    if (result.Piece && result.Square) {
+        BoardState savedState;
+        savedState.White_ponds = White_ponds;
+        savedState.White_knights = White_knights;
+        savedState.White_rooks = White_rooks;
+        savedState.White_bishops = White_bishops;
+        savedState.White_queen = White_queen;
+        savedState.White_king = White_king;
+        savedState.Black_ponds = Black_ponds;
+        savedState.Black_knights = Black_knights;
+        savedState.Black_rooks = Black_rooks;
+        savedState.Black_bishops = Black_bishops;
+        savedState.Black_queen = Black_queen;
+        savedState.Black_king = Black_king;
+        int savedWcL = WcastleL, savedWcR = WcastleR, savedBcL = BcastleL, savedBcR = BcastleR;
+        int savedCount = count;
+
+        // Apply the move once to see the immediate position
+        if (makeMove(result, isWhite)) {
+            int immediateEval = eval_position();
+            // Undo (manual restore rather than unmakeMove to avoid history side effects)
+            White_ponds = savedState.White_ponds;
+            White_knights = savedState.White_knights;
+            White_rooks = savedState.White_rooks;
+            White_bishops = savedState.White_bishops;
+            White_queen = savedState.White_queen;
+            White_king = savedState.White_king;
+            Black_ponds = savedState.Black_ponds;
+            Black_knights = savedState.Black_knights;
+            Black_rooks = savedState.Black_rooks;
+            Black_bishops = savedState.Black_bishops;
+            Black_queen = savedState.Black_queen;
+            Black_king = savedState.Black_king;
+            WcastleL = savedWcL; WcastleR = savedWcR; BcastleL = savedBcL; BcastleR = savedBcR;
+            count = savedCount;
+            updateAll();
+            // Replace score with immediate evaluation
+            result.score = immediateEval;
+            printf("Immediate position eval after move: %d (replacing PV leaf score)\n", immediateEval);
+        } else {
+            // If applying the move failed for some reason, restore state anyway
+            White_ponds = savedState.White_ponds;
+            White_knights = savedState.White_knights;
+            White_rooks = savedState.White_rooks;
+            White_bishops = savedState.White_bishops;
+            White_queen = savedState.White_queen;
+            White_king = savedState.White_king;
+            Black_ponds = savedState.Black_ponds;
+            Black_knights = savedState.Black_knights;
+            Black_rooks = savedState.Black_rooks;
+            Black_bishops = savedState.Black_bishops;
+            Black_queen = savedState.Black_queen;
+            Black_king = savedState.Black_king;
+            WcastleL = savedWcL; WcastleR = savedWcR; BcastleL = savedBcL; BcastleR = savedBcR;
+            count = savedCount;
+            updateAll();
+        }
+    }
+
     return result;
 
 }

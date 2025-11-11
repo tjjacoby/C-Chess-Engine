@@ -22,6 +22,9 @@ void engine_init();
 // Reset the board to starting position
 void engine_reset();
 
+// Set which color the player is (1 = white, 0 = black)
+void engine_setPlayerColor(int isWhite);
+
 // Try to make a move (returns 1 if valid, 0 if invalid)
 int engine_makePlayerMove(uint64_t from, uint64_t to);
 
@@ -38,6 +41,9 @@ void engine_getBoardState(
 
 // Helper function to convert row,col to bitboard square
 uint64_t engine_squareFromRowCol(int row, int col);
+
+// Get the current evaluation score (positive = white advantage, negative = black advantage)
+int engine_getCurrentScore();
 
 #ifdef __cplusplus
 }

@@ -17,6 +17,12 @@ extern int WcastleL, WcastleR, BcastleL, BcastleR;
 extern void initPieceBitboards();
 extern void updateAll();
 
+// Track which color the player is (1 = white, 0 = black)
+static int playerIsWhite = 1;
+
+// Track the current evaluation score
+static int currentScore = 0;
+
 // Helper function to convert bitboard position to chess notation
 const char* bitboardToSquareName(uint64_t square) {
     // Map each bitboard position to its square name
@@ -119,19 +125,12 @@ void engine_init() {
 
 void engine_reset() {
     reset();
-    updateAll();  // Double-check that everything is updated
-   // printf("Board reset to starting position\n");
-   // printf("Debug: White=0x%llx, Black=0x%llx, Main=0x%llx\n", White, Black, Main);
-   // printf("White_ponds=0x%llx\n", White_ponds);
-    
-    /*// Test coordinate conversion
-    printf("\nTesting coordinate conversion:\n");
-    printf("D2 should be 0x1000 (bit 12)\n");
-    uint64_t d2_test = engine_squareFromRowCol(6, 3);  // row 6, col 3 should be D2
-    printf("  engine_squareFromRowCol(6,3) = 0x%llx\n", d2_test);
-    printf("  D2 from moves.h = 0x%llx\n", D2);
-    printf("  Match: %s\n\n", (d2_test == D2) ? "YES" : "NO");
-    */
+    updateAll();
+}
+
+void engine_setPlayerColor(int isWhite) {
+    playerIsWhite = isWhite;
+    printf("Player color set to: %s\n", isWhite ? "White" : "Black");
 }
 
 int engine_makePlayerMove(uint64_t from, uint64_t to) {
@@ -154,9 +153,11 @@ int engine_makePlayerMove(uint64_t from, uint64_t to) {
     printf("Move structure before makeMove: Piece=0x%llx, Square=0x%llx\n", move.Piece, move.Square);
     printf("Size of Move structure: %zu bytes\n", sizeof(Move));
     
-    // Check if there's actually a white piece at 'from'
-    if (!(White & from)) {
-        printf("ERROR: No white piece at from square 0x%llx!\n", from);
+    // Check if there's actually a player piece at 'from'
+    uint64_t playerPieces = playerIsWhite ? White : Black;
+    if (!(playerPieces & from)) {
+        printf("ERROR: No %s piece at from square 0x%llx!\n", 
+               playerIsWhite ? "white" : "black", from);
         return 0;
     }
     
@@ -167,7 +168,7 @@ int engine_makePlayerMove(uint64_t from, uint64_t to) {
     printf("Piece type: %s\n", pieceType);
     printf("Move: %s to %s\n", fromSquare, toSquare);
     
-    int result = makeMove(move, 1); // 1 = white (player)
+    int result = makeMove(move, playerIsWhite); // Use player's actual color
     
     if (result == 1) {
         printf("Player move valid: %s from %s to %s\n", pieceType, fromSquare, toSquare);
@@ -184,7 +185,14 @@ SimpleMove engine_getAIMove() {
     // Force update before AI calculates
     updateAll();
     
-    Move aiMove = bestMove(0); // 0 = black (AI)
+    // DEBUG: Check piece counts before AI search
+    extern int countSetBits(uint64_t);
+    // AI is opposite color of player
+    int aiColor = playerIsWhite ? 0 : 1; // If player is white (1), AI is black (0), and vice versa
+    Move aiMove = bestMove(aiColor);
+    
+    // Store the evaluation score
+    currentScore = aiMove.score;
     
     SimpleMove result;
     result.from = aiMove.Piece;
@@ -201,7 +209,7 @@ SimpleMove engine_getAIMove() {
         printf("AI attempting: %s from %s (0x%llx) to %s (0x%llx)\n", 
                pieceType, fromSquare, result.from, toSquare, result.to);
         
-        int moveResult = makeMove(aiMove, 0); // 0 = black (AI)
+        int moveResult = makeMove(aiMove, aiColor); // Use AI's actual color
         if (moveResult == 1) {
             printf("AI moved: %s from %s to %s\n", pieceType, fromSquare, toSquare);
         } else {
@@ -252,4 +260,8 @@ uint64_t engine_squareFromRowCol(int row, int col) {
     // Calculate bit position: rank * 8 + file
     int bitPos = rank * 8 + file;
     return 1ULL << bitPos;
+}
+
+int engine_getCurrentScore() {
+    return currentScore;
 }
