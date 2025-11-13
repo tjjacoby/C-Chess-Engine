@@ -9,7 +9,7 @@
 
 // External declarations from main.c
 extern uint64_t White_king, Black_king, White_rooks, Black_rooks, White_queen, Black_queen;
-extern uint64_t White_ponds, Black_ponds, White_knights, Black_knights, White_bishops, Black_bishops;
+extern uint64_t White_pawns, Black_pawns, White_knights, Black_knights, White_bishops, Black_bishops;
 extern uint64_t White, Black, Main;
 extern int WcastleL, WcastleR, BcastleL, BcastleR;
 
@@ -103,13 +103,13 @@ const char* bitboardToSquareName(uint64_t square) {
 
 // Helper function to identify piece type at a given position
 const char* getPieceTypeName(uint64_t square) {
-    if (square & White_ponds) return "White Pawn";
+    if (square & White_pawns) return "White Pawn";
     if (square & White_knights) return "White Knight";
     if (square & White_bishops) return "White Bishop";
     if (square & White_rooks) return "White Rook";
     if (square & White_queen) return "White Queen";
     if (square & White_king) return "White King";
-    if (square & Black_ponds) return "Black Pawn";
+    if (square & Black_pawns) return "Black Pawn";
     if (square & Black_knights) return "Black Knight";
     if (square & Black_bishops) return "Black Bishop";
     if (square & Black_rooks) return "Black Rook";
@@ -146,9 +146,9 @@ int engine_makePlayerMove(uint64_t from, uint64_t to) {
     updateAll();
     
     printf("Attempting move: from=0x%llx to=0x%llx\n", from, to);
-    printf("White_ponds: 0x%llx\n", White_ponds);
+    printf("White_pawns: 0x%llx\n", White_pawns);
     printf("White: 0x%llx, Black: 0x%llx, Main: 0x%llx\n", White, Black, Main);
-    printf("Piece at from? White_ponds & from = 0x%llx\n", White_ponds & from);
+    printf("Piece at from? White_pawns & from = 0x%llx\n", White_pawns & from);
     printf("Piece at from? Main & from = 0x%llx\n", Main & from);
     printf("Move structure before makeMove: Piece=0x%llx, Square=0x%llx\n", move.Piece, move.Square);
     printf("Size of Move structure: %zu bytes\n", sizeof(Move));
@@ -229,14 +229,14 @@ void engine_getBoardState(
     uint64_t* black_pawns, uint64_t* black_knights, uint64_t* black_bishops,
     uint64_t* black_rooks, uint64_t* black_queen, uint64_t* black_king
 ) {
-    *white_pawns = White_ponds;
+    *white_pawns = White_pawns;
     *white_knights = White_knights;
     *white_bishops = White_bishops;
     *white_rooks = White_rooks;
     *white_queen = White_queen;
     *white_king = White_king;
     
-    *black_pawns = Black_ponds;
+    *black_pawns = Black_pawns;
     *black_knights = Black_knights;
     *black_bishops = Black_bishops;
     *black_rooks = Black_rooks;

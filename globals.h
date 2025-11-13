@@ -6,13 +6,13 @@
 
 // BoardState structure for storing game state
 typedef struct {
-    uint64_t White_ponds;
+    uint64_t White_pawns;
     uint64_t White_knights;
     uint64_t White_rooks;
     uint64_t White_bishops;
     uint64_t White_queen;
     uint64_t White_king;
-    uint64_t Black_ponds;
+    uint64_t Black_pawns;
     uint64_t Black_knights;
     uint64_t Black_rooks;
     uint64_t Black_bishops;
@@ -48,7 +48,7 @@ typedef struct {
 
 // Global variables
 extern uint64_t White_king, Black_king, White_rooks, Black_rooks, White_queen, Black_queen;
-extern uint64_t White_ponds, Black_ponds;
+extern uint64_t White_pawns, Black_pawns;
 extern int WcastleL, WcastleR, BcastleL, BcastleR;
 
 // Function prototypes

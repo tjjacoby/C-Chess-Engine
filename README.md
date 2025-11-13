@@ -28,24 +28,6 @@ The engine uses several key components:
 - GCC compiler
 - Make utility
 
-### Compilation
-
-```bash
-make
-```
-
-### Running the Engine
-
-```bash
-./main
-```
-
-### Clean Build
-
-```bash
-make clean
-```
-
 ## Project Status
 
 **Initial Development**: Late 2023 - Created working prototype with legal move generation and weak AI
@@ -54,26 +36,14 @@ make clean
 
 ## Future Goals
 
-- [ ] Improve evaluation function for better position assessment
-- [ ] Implement deeper search with iterative deepening
-- [ ] Add opening book support
-- [ ] Optimize move ordering for better pruning
-- [ ] Implement endgame tablebases
-- [ ] Add UCI (Universal Chess Interface) protocol support
+Add draw by repetition detection, implement opening book, and enhance evaluation function for better positional understanding.
+
+Add depth setting to frontend at start of game 
 
 
 ## FRONTEND MAKE 
 # Compile the frontend
-make -f makefile_frontend
-
-# Copy DLL files (if needed)
-make -f makefile_frontend dlls
-
-# Compile and run
-make -f makefile_frontend run
-
-# Clean build files
-make -f makefile_frontend clean
+mingw32-make -f makefile_frontend
 
 
 ## Author

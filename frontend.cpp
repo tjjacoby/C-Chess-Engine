@@ -171,6 +171,7 @@ int pick_colour() {
         colorWindow.clear(sf::Color(200, 200, 200));
         colorWindow.draw(whiteButton);
         colorWindow.draw(blackButton);
+
         
         if (fontLoaded) {
             colorWindow.draw(titleText);

@@ -34,7 +34,7 @@ int quiesce(int alpha, int beta, int isMaximizingPlayer, int qdepth);
 void updateAll();
 
 #define MAX_MOVES 65536  // Limit move history to a safe bound (~4-5MB); prevents runaway growth
-#define BASE_DEPTH 7  // Base depth for midgame, will be adjusted based on game phase
+#define BASE_DEPTH 4  // Base depth for midgame, will be adjusted based on game phase
 #define QMAX_DEPTH 8   // Maximum depth for quiescence capture extension
 
 int WcastleL = 1;
