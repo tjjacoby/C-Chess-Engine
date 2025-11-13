@@ -21,6 +21,9 @@ typedef struct {
 } BoardState;
 
 // Define shared structs - MUST match the definition in main.c
+// Lightweight move representation used during search and generation.
+// Board state snapshots are maintained separately (not per move) to
+// drastically reduce memory footprint.
 typedef struct {
     uint64_t Bwhite;
     uint64_t Bblack;
@@ -30,8 +33,13 @@ typedef struct {
     int capturetype;
     int score;
     int castle;
-    BoardState prevState;
 } Move;
+
+// Entry in move history retains the previous board state for undo operations.
+typedef struct {
+    Move move;
+    BoardState prevState;
+} MoveHistoryEntry;
 
 typedef struct {
     Move *moves;
