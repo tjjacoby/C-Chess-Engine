@@ -3,12 +3,8 @@
 
 // Piece-Square Tables for positional evaluation
 
-
-
 // Layout: H1=0, G1=1, F1=2... A1=7, H2=8... A8=63
-// Values encourage pawn advancement toward promotion
-// White pawns: start rank 2, promote rank 8
-// Black pawns: start rank 7, promote rank 8
+
 
 // Rescaled pawn tables (moderate range, avoid overshadowing material). Max bonus ~30.
 static const int WHITE_PAWN_POSITION_TABLE[64] = {
@@ -134,7 +130,7 @@ static const int WHITE_QUEEN_POSITION_TABLE[64] = {
 //  - Small bonus for corners, penalty toward center and for advancing the king
 //  - Symmetric across files; Black is rank-mirrored version of White
 static const int WHITE_KING_POSITION_TABLE[64] = {
-    10, 12,  8, -4,  8, 12, 10, 10,
+    10, 12,  8, -4,  8, 8, 12, 10,
      4,  6,  2, -6, -6,  2,  6,  4,
     -4, -6, -8,-12,-12, -8, -6, -4,
     -8,-10,-12,-16,-16,-12,-10, -8,
@@ -155,51 +151,4 @@ static const int BLACK_KING_POSITION_TABLE[64] = {
     10, 12,  8, -4,  8, 12, 10, 10
 };
 
-// ============================================================================
-// TEMPORARY TEST TABLES - ALL ZEROS TO ISOLATE POSITION TABLE ISSUES
-// Comment out the #define below to use original tables above
-// ============================================================================
-/*
-#define USE_TEST_TABLES
-
-#ifdef USE_TEST_TABLES
-// Override all tables with zeros
-#undef WHITE_PAWN_POSITION_TABLE
-#undef BLACK_PAWN_POSITION_TABLE
-#undef WHITE_KNIGHT_POSITION_TABLE
-#undef BLACK_KNIGHT_POSITION_TABLE
-#undef WHITE_BISHOP_POSITION_TABLE
-#undef BLACK_BISHOP_POSITION_TABLE
-#undef WHITE_ROOK_POSITION_TABLE
-#undef BLACK_ROOK_POSITION_TABLE
-#undef WHITE_QUEEN_POSITION_TABLE
-#undef BLACK_QUEEN_POSITION_TABLE
-#undef WHITE_KING_POSITION_TABLE
-#undef BLACK_KING_POSITION_TABLE
-
-static const int TEST_ZERO_TABLE[64] = {
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0
-};
-
-#define WHITE_PAWN_POSITION_TABLE TEST_ZERO_TABLE
-#define BLACK_PAWN_POSITION_TABLE TEST_ZERO_TABLE
-#define WHITE_KNIGHT_POSITION_TABLE TEST_ZERO_TABLE
-#define BLACK_KNIGHT_POSITION_TABLE TEST_ZERO_TABLE
-#define WHITE_BISHOP_POSITION_TABLE TEST_ZERO_TABLE
-#define BLACK_BISHOP_POSITION_TABLE TEST_ZERO_TABLE
-#define WHITE_ROOK_POSITION_TABLE TEST_ZERO_TABLE
-#define BLACK_ROOK_POSITION_TABLE TEST_ZERO_TABLE
-#define WHITE_QUEEN_POSITION_TABLE TEST_ZERO_TABLE
-#define BLACK_QUEEN_POSITION_TABLE TEST_ZERO_TABLE
-#define WHITE_KING_POSITION_TABLE TEST_ZERO_TABLE
-#define BLACK_KING_POSITION_TABLE TEST_ZERO_TABLE
-#endif
-*/
 #endif // POSITION_TABLES_H

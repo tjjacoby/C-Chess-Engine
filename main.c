@@ -34,8 +34,8 @@ int quiesce(int alpha, int beta, int isMaximizingPlayer, int qdepth);
 void updateAll();
 
 #define MAX_MOVES 65536  // Limit move history to a safe bound (~4-5MB); prevents runaway growth
-#define BASE_DEPTH 4  // Base depth for midgame, will be adjusted based on game phase
-#define QMAX_DEPTH 8   // Maximum depth for quiescence capture extension
+#define BASE_DEPTH 4  // Base depth for midgame (4 is much faster, still plays well)
+#define QMAX_DEPTH 4   // Maximum depth for quiescence capture extension (reduced for speed)
 
 int WcastleL = 1;
 int WcastleR = 1;
@@ -1449,19 +1449,43 @@ int move_piece(Move move, int isWhite) {
 
     int c = 0;
     // Castling detection: king moved two squares horizontally (avoid global all_VaildMoves())
+    // Need to validate that the move the valid
     if(type == 6) {
         if((Piece >> 2) == sqaure) {
+            if (isWhite)
+            {
+                //Check castling rights
+                if(!WcastleR) {
+                    return -1;
+                }
+            }else 
+            {
+                if(!BcastleR) {
+                    return -1;
+                }
+            }
             c = isWhite ? 2 : 4; // king side
         } else if((Piece << 2) == sqaure) {
+            if(isWhite) {
+                if(!WcastleL) {
+                    return -1;
+                }
+            } else {
+                if(!BcastleL) {
+                    return -1;
+                }
+            }
             c = isWhite ? 1 : 3; // queen side
         }
     }
 
 
-
+    BitBoard pawnMoves = find_pawnmoves(Piece, isWhite);
 ////For Promotion of a pawn, now handles capture promotions correctly (only to queen for now)
     if(type == 1) {
-        if((sqaure & Rank1) || (sqaure & Rank8)) {
+        //Check that the move is valid before promoting
+        // Just check if pawn is on second last rank and moving to last rank
+        if((sqaure & pawnMoves & Rank1) || (sqaure &  pawnMoves & Rank8)) {
             if(isWhite) {
                 // If capturing on the last rank, remove the enemy piece first
                 if (sqaure & Black) {
@@ -1547,7 +1571,7 @@ int move_piece(Move move, int isWhite) {
         {
 
         case 1:
-            if(sqaure & find_pawnmoves(Piece, isWhite)) {
+            if(sqaure & pawnMoves) {
                 if(sqaure &(isWhite ? Black:White)) {
                     //this means it capturing a piece and must update both boards
                     move.capturetype = take(sqaure, 0); //function to get rid of peice on that bitboard, and update the score
@@ -1968,20 +1992,91 @@ static inline int eval_piece_positions(BitBoard pieces, const int* posTable) {
         score += posTable[square];
         temp &= temp - 1;  // Clear LSB
     }
-    
+
+
     return score;
 }
 
+static inline int pawn_eval(BitBoard White, BitBoard Black)
+{
+    // Check for double pawns, isolated pawns, and passed pawns (combined loop for performance)
+    int score = 0;
+    
+    // Single loop to check all pawn structure features per file
+    for(int file = 0; file < 8; file++) {
+        // FIX: FileA is MSB, FileH is LSB, so shift RIGHT to move from A->B->C...->H
+        BitBoard fileMask = FileA >> file;
+        BitBoard whitePawnsInFile = White_pawns & fileMask;
+        BitBoard blackPawnsInFile = Black_pawns & fileMask;
+
+        int whitePawnCount = countSetBits(whitePawnsInFile);
+        int blackPawnCount = countSetBits(blackPawnsInFile);
+
+        // 1. Double pawns - penalize having multiple pawns on same file
+        if(whitePawnCount > 1) {
+            score -= (whitePawnCount - 1) * 20; // White penalty hurts White
+        }
+        if(blackPawnCount > 1) {
+            score += (blackPawnCount - 1) * 20; // Black penalty helps White (FIX: was subtracting)
+        }
+
+        // 2. Isolated pawns - penalize pawns with no friendly pawns on adjacent files
+        if(whitePawnsInFile) {
+            BitBoard adjacentFiles = 0;
+            if(file > 0) adjacentFiles |= FileA >> (file - 1);  // FIX: shift right
+            if(file < 7) adjacentFiles |= FileA >> (file + 1);  // FIX: shift right
+            if(!(White_pawns & adjacentFiles)) {
+                score -= 15; // White isolated pawn penalty
+            }
+        }
+        if(blackPawnsInFile) {
+            BitBoard adjacentFiles = 0;
+            if(file > 0) adjacentFiles |= FileA >> (file - 1);  // FIX: shift right
+            if(file < 7) adjacentFiles |= FileA >> (file + 1);  // FIX: shift right
+            if(!(Black_pawns & adjacentFiles)) {
+                score += 15; // Black isolated pawn helps White (FIX: was subtracting)
+            }
+        }
+
+        // 3. Passed pawns - bonus for pawns with no enemy pawns blocking/attacking ahead
+        if(whitePawnsInFile) {
+            BitBoard aheadAndAdjacent = 0;
+            for(int f = (file > 0 ? file - 1 : file); f <= (file < 7 ? file + 1 : file); f++) {
+                // FIX: White pawns move UP (toward rank 8), exclude Rank1-2, only check ahead
+                aheadAndAdjacent |= (FileA >> f) & (Rank3 | Rank4 | Rank5 | Rank6 | Rank7 | Rank8);
+            }
+            if(!(Black_pawns & aheadAndAdjacent)) {
+                score += 30; // White passed pawn bonus
+            }
+        }
+        if(blackPawnsInFile) {
+            BitBoard aheadAndAdjacent = 0;
+            for(int f = (file > 0 ? file - 1 : file); f <= (file < 7 ? file + 1 : file); f++) {
+                // FIX: Black pawns move DOWN (toward rank 1), exclude Rank7-8, only check ahead
+                aheadAndAdjacent |= (FileA >> f) & (Rank1 | Rank2 | Rank3 | Rank4 | Rank5 | Rank6);
+            }
+            if(!(White_pawns & aheadAndAdjacent)) {
+                score -= 30; // Black passed pawn helps Black (FIX: was adding to score)
+            }
+        }
+    }
+
+    return score;
+}
+
+
 // Material + positional evaluation from White's perspective (positive favors White)
 int eval_position() {
+    // DO NOT check for checkmate here - it's way too expensive!
+    // Checkmate detection is handled in minimax/quiesce when moves.size == 0
+    // This function is called millions of times and must be FAST
+    
     int WhiteScore = 0;
     int BlackScore = 0;
     
     // Material evaluation
     int numberOfpawnsWhite = countSetBits(White_pawns);
     int numberOfpawnsBlack = countSetBits(Black_pawns);
-    
-
     int numberOfKnightsWhite = countSetBits(White_knights);
     int numberOfKnightsBlack = countSetBits(Black_knights);
     int numberOfRooksWhite = countSetBits(White_rooks);
@@ -2029,6 +2124,27 @@ int eval_position() {
     if (isCheck(0)) {  // Black king in check
         BlackScore -= 50;
     }
+    
+    // Castling bonus: Reward having castled (king on castled square + rook moved from corner)
+    // White kingside castle: King on G1, rook NOT on H1
+    if ((White_king & G1) && !(White_rooks & H1) && (White_rooks & (F1 | E1 | D1))) {
+        WhiteScore += 40; // Significant bonus for kingside castle
+    }
+    // White queenside castle: King on C1, rook NOT on A1
+    if ((White_king & C1) && !(White_rooks & A1) && (White_rooks & (D1 | E1 | F1))) {
+        WhiteScore += 40; // Significant bonus for queenside castle
+    }
+    // Black kingside castle: King on G8, rook NOT on H8
+    if ((Black_king & G8) && !(Black_rooks & H8) && (Black_rooks & (F8 | E8 | D8))) {
+        BlackScore += 40; // Significant bonus for kingside castle
+    }
+    // Black queenside castle: King on C8, rook NOT on A8
+    if ((Black_king & C8) && !(Black_rooks & A8) && (Black_rooks & (D8 | E8 | F8))) {
+        BlackScore += 40; // Significant bonus for queenside castle
+    }
+    
+    // Returns - if black is winning + if white is winning on pawn structure
+    WhiteScore += pawn_eval(White_pawns, Black_pawns);
 
     return (WhiteScore - BlackScore);
 }
@@ -2393,23 +2509,23 @@ int getAdaptiveDepth() {
                       countSetBits(Black_queen);
     int totalPieces = whitePieces + blackPieces;
     
-    // Game phase determination:
-    // Opening/Early game: 26-32 pieces → depth 3-4 (too many moves, slower)
-    // Midgame: 13-25 pieces → depth 5 (balanced)
-    // Endgame: 1-12 pieces → depth 6-8 (fewer moves, can search deeper)
+    // Game phase determination (optimized for speed):
+    // Opening/Early game: 26-32 pieces → depth 3 (many moves)
+    // Midgame: 13-25 pieces → depth 4 (balanced)
+    // Endgame: 1-12 pieces → depth 5-6 (fewer moves, can search deeper)
     
     if (totalPieces >= 26) {
-        return BASE_DEPTH - 2;  // Opening: many pieces, many moves
+        return 3;  // Opening: many pieces, keep it fast
     } else if (totalPieces >= 20) {
-        return BASE_DEPTH - 1;  // Early midgame
+        return 3;  // Early midgame: still many moves
     } else if (totalPieces >= 13) {
-        return BASE_DEPTH;  // Midgame: use base depth (5)
+        return BASE_DEPTH;  // Midgame: use base depth (4)
     } else if (totalPieces >= 8) {
-        return BASE_DEPTH + 1;  // Early endgame: fewer pieces, can go deeper
+        return BASE_DEPTH + 1;  // Early endgame: depth 5
     } else if (totalPieces >= 4) {
-        return BASE_DEPTH + 2;  // Late endgame: very few pieces
+        return BASE_DEPTH + 2;  // Late endgame: depth 6
     } else {
-        return BASE_DEPTH + 3;  // King vs King + piece: search very deep
+        return BASE_DEPTH + 3;  // King vs King + piece: depth 7
     }
 }
 
