@@ -11,7 +11,7 @@ void printBinary(uint64_t num) {
 
     for (i = 0; i < size; i++) {
         // Use bitwise shift and bitwise AND to print each bit
-        printf("%lld", (num >> (size - 1 - i)) & 1);
+        printf("%ld", (num >> (size - 1 - i)) & 1);
         
         // Insert a space for better readability
         if ((i + 1) % 8 == 0)

@@ -7,6 +7,8 @@
 #include "moves.h"
 #include "binary_printer.h"
 #include "position_tables.h"
+
+// A BitBoard is just a 64-bit number used to represent the chessboard
 typedef uint64_t BitBoard;
 
 
@@ -14,10 +16,10 @@ BitBoard vaildMovesWhite(void);
 BitBoard vaildMovesBlack(void);
 BitBoard find_rookmoves(BitBoard Piece, int isWhite);
 BitBoard find_bishopmoves(BitBoard Piece, int isWhite);
+
 static inline BitBoard attacks_by_white(void);
 static inline BitBoard attacks_by_black(void);
 static inline int is_square_attacked(BitBoard square, int byWhite);
-
 
 MoveList combineMoveLists(MoveList list1, MoveList list2);
 MoveList find_Castles(int isWhite);
@@ -33,25 +35,28 @@ int quiesce(int alpha, int beta, int isMaximizingPlayer, int qdepth);
 
 void updateAll();
 
-#define MAX_MOVES 65536  // Limit move history to a safe bound (~4-5MB); prevents runaway growth
-#define BASE_DEPTH 4  // Base depth for midgame (4 is much faster, still plays well)
+#define MAX_MOVES 65536  // Limit move history to a safe bound 
+#define BASE_DEPTH 6  // Base depth for midgame ( 4 is fast and good, 6 is slower plays around ~2300 elo)
 #define QMAX_DEPTH 4   // Maximum depth for quiescence capture extension (reduced for speed)
 
+// Castling flags
 int WcastleL = 1;
 int WcastleR = 1;
 int BcastleL = 1;
 int BcastleR = 1;
 
-
+// infinite values for alpha-beta pruning
 #define INF 2147483647
 #define NINF -2147483647 
 
+// Piece values, pawns are base unit
 #define pawnValue 100
 #define RookValue 500
 #define BishopValue 320
 #define QueenValue 900
-#define KnightValue 300
+#define KnightValue 320
 
+// List of all moves made in the game
 MoveHistoryEntry MoveHistory[MAX_MOVES];
 
 //Init Main Boards, all of the white pieces,black pieces, and all pieces
@@ -78,6 +83,17 @@ BitBoard Black_king;
 int moveCount = 0;
 int movesEvaluated = 0;  // Counter for moves evaluated during search
 
+int count;
+
+// Root search depth (used to prefer faster mates)
+static int rootSearchDepth = 0;
+
+typedef struct {
+    Move bestMove;
+    int score;
+} MoveScore;
+
+
 int find_type(BitBoard piece) {
 
     if((piece & Main) == 0) {
@@ -85,32 +101,32 @@ int find_type(BitBoard piece) {
     }
     // Check for pawn
         if (piece & (White_pawns | Black_pawns)) {
-        return 1; // pawn
+        return Typepawn; 
     }
     
     // Check for knight
     if (piece & (White_knights | Black_knights)) {
-        return 2; // Knight
+        return Typeknight; 
     }
 
     // Check for bishop
     if (piece & (White_bishops | Black_bishops)) {
-        return 3; // Bishop
+        return Typebishop; 
     }
 
     // Check for rook
     if (piece & (White_rooks | Black_rooks)) {
-        return 4; // Rook
+        return Typerook; 
     }
 
     // Check for queen
     if (piece & (White_queen | Black_queen)) {
-        return 5; // Queen
+        return Typequeen; 
     }
 
     // Check for king
     if (piece & (White_king | Black_king)) {
-        return 6; // King
+        return Typeking;
     }
 
     // Default case: fails
@@ -120,12 +136,12 @@ int find_type(BitBoard piece) {
 // Piece value helper (centipawns) for ordering and evaluation adjuncts
 static inline int piece_value_from_type(int t) {
     switch(t) {
-        case 1: return pawnValue;   // Pawn
-        case 2: return KnightValue;   // Knight
-        case 3: return BishopValue;   // Bishop
-        case 4: return RookValue;   // Rook
-        case 5: return QueenValue;   // Queen
-        case 6: return 0;     // King (not used for MVV-LVA ordering)
+        case Typepawn: return pawnValue;   // Pawn
+        case Typeknight: return KnightValue;   // Knight
+        case Typebishop: return BishopValue;   // Bishop
+        case Typerook: return RookValue;   // Rook
+        case Typequeen: return QueenValue;   // Queen
+        case Typeking: return 0;     // King (not used for MVV-LVA ordering)
         default: return 0;
     }
 }
@@ -154,7 +170,7 @@ static inline int square_is_defended(BitBoard square, int byWhite) {
     }
 }
 
-// Hanging penalty: if destination square is attacked by opponent and not defended by us, apply half piece value penalty.
+// Hanging penalty: if destination square is attacked by opponent and not defended , apply half piece value penalty.
 static inline int hanging_penalty(BitBoard pieceBB, BitBoard destBB, int moverIsWhite) {
     int type = find_type(pieceBB);
     if (type == 0) return 0;
@@ -168,15 +184,6 @@ static inline int hanging_penalty(BitBoard pieceBB, BitBoard destBB, int moverIs
 }
 
 
-int count;
-
-// Root search depth (used to prefer faster mates)
-static int rootSearchDepth = 0;
-
-typedef struct {
-    Move bestMove;
-    int score;
-} MoveScore;
 
 // Used for debugging: print current castling rights
 void printFlags() {
@@ -187,6 +194,7 @@ void printFlags() {
 void updateMain(){
     Main = White | Black;
 }
+
 void updateWhite() {
 White = White_pawns | White_knights | White_rooks | White_bishops | White_king | White_queen;
 
@@ -199,6 +207,8 @@ void updateAll() {
     updateWhite();
     updateMain();
 }
+
+
 
 // Compute pawn attack masks for a set of pawns
 static inline BitBoard pawn_attacks(BitBoard pawns, int isWhite) {
@@ -418,6 +428,8 @@ BitBoard find_kingmoves( BitBoard Piece, int isWhite) {
 
     }
 
+// #2
+// Finds and returns all valid pawn moves for a given pawn
 BitBoard find_pawnmoves(BitBoard Piece, int isWhite) {
 
     BitBoard vaild_moves = ~(White|Black); 
@@ -503,8 +515,8 @@ Move find_tallLright(BitBoard Piece, int isWhite) {
     
 }
 Move find_tallLleft(BitBoard Piece, int isWhite) {
-     Move move;
-    BitBoard vaild_moves = ~(White|Black); 
+    Move move;
+    BitBoard vaild_moves = ~(White|Black); // maybe a bug here, knights can capture 
     move.Square = ((Piece & ClearFile_A) >> 15) & vaild_moves;
     move.Piece = Piece;
     return move;
@@ -662,7 +674,7 @@ BitBoard find_bishopmoves(BitBoard Piece, int isWhite) {
                 Piece_LSB = getLSB(Temp);
                 tempmove = help_Bishop(Piece_LSB, isWhite);
                 moves = tempmove | moves;
-                //removes the LSB then get the next(gets moves for each rook on the board)
+                //removes the LSB then get the next(gets moves for each bishop on the board)
                 Temp = removeLSB(Temp);
 
             }
@@ -1343,26 +1355,26 @@ int take(BitBoard sqaure, int isWhite) {
         //for White Piece being taken
         switch (type)
         {
-            case 1:
+            case Typepawn:
                 White_pawns = (White_pawns & ~sqaure);
                 break;
-            case 2:
+            case Typeknight:
                 White_knights = (White_knights & ~sqaure);
                 break;
-            case 3:
+            case Typebishop:
                 White_bishops = (White_bishops & ~sqaure);
                 break;
-            case 4:
+            case Typerook:
                 White_rooks = (White_rooks & ~sqaure);
                 // If a rook is captured on its starting square, disable that side's castling
                 if(sqaure == H1) WcastleR = 0;
                 if(sqaure == A1) WcastleL = 0;
                 break;
-            case 5:
+            case Typequeen:
                 White_queen = (White_queen & ~sqaure);
                 break;
-            case 6: 
-               // King_cap();
+            case Typeking: 
+               // This should never happen in a valid game (should be handled by checkmate and endgame before) 
                 break;
             default:
                 break;
@@ -1371,26 +1383,26 @@ int take(BitBoard sqaure, int isWhite) {
         //for Black Piece being taken
         switch (type)
         {
-            case 1:
+            case Typepawn:
                 Black_pawns = (Black_pawns & ~sqaure);
                 break;
-            case 2:
+            case Typeknight:
                 Black_knights = (Black_knights & ~sqaure);
                 break;
-            case 3:
+            case Typebishop:
                 Black_bishops = (Black_bishops & ~sqaure);
                 break;
-            case 4:
+            case Typerook:
                 Black_rooks = (Black_rooks & ~sqaure);
                 // If a rook is captured on its starting square, disable that side's castling
                 if(sqaure == H8) BcastleR = 0;
                 if(sqaure == A8) BcastleL = 0;
                 break;
-            case 5:
+            case Typequeen:
                 Black_queen = (Black_queen & ~sqaure);
                 break;
-            case 6: 
-               // King_cap();
+            case Typeking: 
+               // This should never happen in a valid game (should be handled by checkmate and endgame before) 
                 break;
             default:
                 break;
@@ -1406,8 +1418,8 @@ void StoreMove(Move move){
         
         //updates the move to have the right black and white board note that the moved piece has been moved 
         updateAll();
-        move.Bblack = Black;
-        move.Bwhite = White;
+        //move.Bblack = Black;
+        //move.Bwhite = White;
 
     // Increase move count only if there is capacity; prevents out-of-bounds
     if (count + 1 >= MAX_MOVES) {
@@ -1434,6 +1446,7 @@ void StoreMove(Move move){
 
 }
 
+// Main function to move a piece 
 int move_piece(Move move, int isWhite) {
     BitBoard Piece = move.Piece;
     BitBoard sqaure = move.Square;
@@ -1446,11 +1459,12 @@ int move_piece(Move move, int isWhite) {
     }
  
  
-
+    //Castling
     int c = 0;
     // Castling detection: king moved two squares horizontally (avoid global all_VaildMoves())
     // Need to validate that the move the valid
-    if(type == 6) {
+    if(type == Typeking) {
+        // if castling (i.e king moves two squares)
         if((Piece >> 2) == sqaure) {
             if (isWhite)
             {
@@ -1478,11 +1492,57 @@ int move_piece(Move move, int isWhite) {
             c = isWhite ? 1 : 3; // queen side
         }
     }
+    
+    if(c == 1 || c == 2 || c ==3 || c ==4) {
+        switch (c)
+        {
+        case 1:
+            //A file White
+            White_rooks = (White_rooks & ~A1) | D1;
+            White_king = C1;
+            //updateAll();
+            StoreMove(move);
+            WcastleL = 0; WcastleR = 0; // castling spends both rights
+            return 1;
+            break;
+        case 2:
+            //H file White
+            White_rooks = (White_rooks & ~H1) | F1;
+            White_king = G1;
+            //updateAll();
+            StoreMove(move);
+            WcastleL = 0; WcastleR = 0; // castling spends both rights
+            return 1;
+            break;
+        case 3:
+            //A file Black
+            Black_rooks = (Black_rooks & ~A8) | D8;
+            Black_king = C8;
+            //updateAll();
+            StoreMove(move);
+            BcastleL = 0; BcastleR = 0; // castling spends both rights
+            return 1;
+            break;
+        case 4:
+            //H file Black
+            Black_rooks = (Black_rooks & ~H8) | F8;
+            Black_king = G8;
+            //updateAll();
+            StoreMove(move);
+            BcastleL = 0; BcastleR = 0; // castling spends both rights
+            return 1;
+            break;
+        default:
+            break;
+        }
+    }
+
+
 
 
     BitBoard pawnMoves = find_pawnmoves(Piece, isWhite);
 ////For Promotion of a pawn, now handles capture promotions correctly (only to queen for now)
-    if(type == 1) {
+    if(type == Typepawn) {
         //Check that the move is valid before promoting
         // Just check if pawn is on second last rank and moving to last rank
         if((sqaure & pawnMoves & Rank1) || (sqaure &  pawnMoves & Rank8)) {
@@ -1506,71 +1566,17 @@ int move_piece(Move move, int isWhite) {
             }
         }
     }
-//////
+
  
     // Removed expensive global all_VaildMoves() presence test; each piece case validates
     // the move with its own generator. Keeping the global union was a major bottleneck.
-
-    if(type == 0) {
-        //printf("Piece not found");
-        return -1;
-    }
    
     move.capturetype = 0;
-    //Castling
-    
-    if(c == 1 || c == 2 || c ==3 || c ==4) {
-        switch (c)
-        {
-        case 1:
-            //A file White
-            White_rooks = (White_rooks & ~A1) | D1;
-            White_king = C1;
-            //updateAll();
-            StoreMove(move);
-            WcastleR = 0;
-            return 1;
-            break;
-        case 2:
-            //H file White
-            White_rooks = (White_rooks & ~H1) | F1;
-            White_king = G1;
-            //updateAll();
-            StoreMove(move);
-            WcastleL = 0;
-            return 1;
-            break;
-        case 3: 
-            //A file Black
-            Black_rooks = (Black_rooks & ~A8) | D8;
-            Black_king = C8;
-            //updateAll();
-            StoreMove(move);
-            BcastleR = 0;
-            return 1;
-            break;
-        case 4:
-            //H file Black
-            Black_rooks = (Black_rooks & ~H8) | F8;
-            Black_king = G8;
-            //updateAll();
-            StoreMove(move);
-            BcastleL = 0;
-            return 1;
-            break;
-        default:
-            break;
-        }
-    }
-
-
-    
 
     if(isWhite) {
         switch (type)
         {
-
-        case 1:
+        case Typepawn:
             if(sqaure & pawnMoves) {
                 if(sqaure &(isWhite ? Black:White)) {
                     //this means it capturing a piece and must update both boards
@@ -1590,7 +1596,7 @@ int move_piece(Move move, int isWhite) {
                 }
             } 
             break;
-        case 2: 
+        case Typeknight: 
         //knights
             if(sqaure & find_knightmoves(Piece, isWhite)) {
                 if(sqaure &(isWhite ? Black:White)) {
@@ -1611,7 +1617,7 @@ int move_piece(Move move, int isWhite) {
                 }
             } 
             break;
-        case 3:
+        case Typebishop:
         //bishops
             if(sqaure & find_bishopmoves(Piece, isWhite)) {
                 if(sqaure &(isWhite ? Black:White)) {
@@ -1631,7 +1637,7 @@ int move_piece(Move move, int isWhite) {
                 }
             } 
             break;
-        case 4:
+        case Typerook:
         //rooks
             if(sqaure & find_rookmoves(Piece, isWhite)) {
                 if(sqaure &(isWhite ? Black:White)) {
@@ -1665,7 +1671,7 @@ int move_piece(Move move, int isWhite) {
                 }
             } 
             break;
-        case 5:
+        case Typequeen:
         //queen
             if(sqaure & find_queenmoves(Piece, isWhite)) {
                 if(sqaure &(isWhite ? Black:White)) {
@@ -1684,7 +1690,7 @@ int move_piece(Move move, int isWhite) {
                 }
             } 
             break;
-        case 6:
+        case Typeking:
         //king
             
             if(sqaure & find_kingmoves(Piece, isWhite)) {
@@ -1718,7 +1724,7 @@ int move_piece(Move move, int isWhite) {
     }else {
         switch (type)
         {
-        case 1:
+        case Typepawn:
             if(sqaure & find_pawnmoves(Piece, isWhite)) {
                 if(sqaure &(isWhite ? Black:White)) {
                     //this means it capturing a piece and must update both boards
@@ -1736,7 +1742,7 @@ int move_piece(Move move, int isWhite) {
                 }
             } 
             break;
-        case 2: 
+        case Typeknight: 
         //knights
             if(sqaure & find_knightmoves(Piece, isWhite)) {
                 if(sqaure &(isWhite ? Black:White)) {
@@ -1755,7 +1761,7 @@ int move_piece(Move move, int isWhite) {
                 }
             } 
             break;
-        case 3:
+        case Typebishop:
         //bishops
             if(sqaure & find_bishopmoves(Piece, isWhite)) {
                 if(sqaure &(isWhite ? Black:White)) {
@@ -1774,7 +1780,7 @@ int move_piece(Move move, int isWhite) {
                 }
             } 
             break;
-        case 4:
+        case Typerook:
         //rooks
             if(sqaure & find_rookmoves(Piece, isWhite)) {
                 if(sqaure &(isWhite ? Black:White)) {
@@ -1807,7 +1813,7 @@ int move_piece(Move move, int isWhite) {
                 }
             } 
             break;
-        case 5:
+        case Typequeen:
         //queen
             if(sqaure & find_queenmoves(Piece, isWhite)) {
                 if(sqaure &(isWhite ? Black:White)) {
@@ -1826,7 +1832,7 @@ int move_piece(Move move, int isWhite) {
                 }
             } 
             break;
-        case 6:
+        case Typeking:
         //king
             if(sqaure & find_kingmoves(Piece, isWhite)) {
                 if(sqaure &(isWhite ? Black:White)) {
@@ -1859,6 +1865,9 @@ int move_piece(Move move, int isWhite) {
     return -1;
 }
 
+// This function attempts to make a move
+// Used for player moves and for AI moves
+// Calls move_piece() which handles actual piece movement and captures, and also stores the move in history
 int makeMove(Move move, int isWhite) {
     // Capture board state BEFORE making the move
     BoardState savedState;
@@ -1895,18 +1904,18 @@ int makeMove(Move move, int isWhite) {
     if(isCheck(isWhite)) {
         //printf("Invalid move: %s would be in check!\n", isWhite ? "White" : "Black");
         // Undo the move
-    White_pawns = savedState.White_pawns;
-    White_knights = savedState.White_knights;
-    White_rooks = savedState.White_rooks;
-    White_bishops = savedState.White_bishops;
-    White_queen = savedState.White_queen;
-    White_king = savedState.White_king;
-    Black_pawns = savedState.Black_pawns;
-    Black_knights = savedState.Black_knights;
-    Black_rooks = savedState.Black_rooks;
-    Black_bishops = savedState.Black_bishops;
-    Black_queen = savedState.Black_queen;
-    Black_king = savedState.Black_king;
+        White_pawns = savedState.White_pawns;
+        White_knights = savedState.White_knights;
+        White_rooks = savedState.White_rooks;
+        White_bishops = savedState.White_bishops;
+        White_queen = savedState.White_queen;
+        White_king = savedState.White_king;
+        Black_pawns = savedState.Black_pawns;
+        Black_knights = savedState.Black_knights;
+        Black_rooks = savedState.Black_rooks;
+        Black_bishops = savedState.Black_bishops;
+        Black_queen = savedState.Black_queen;
+        Black_king = savedState.Black_king;
         // Restore castling rights and move history count that may have changed
         WcastleL = savedWcL; WcastleR = savedWcR; BcastleL = savedBcL; BcastleR = savedBcR;
         count = savedCount;
@@ -2544,13 +2553,13 @@ Move bestMove(int isWhite) {
                         (totalPieces >= 8) ? "Endgame" : "Late Endgame";
     
     printf("=== AI Search: %s (depth %d, %d pieces) ===\n", phase, depth, totalPieces);
-    printf("Position eval: %d\n", eval_position());
+    //printf("Position eval: %d\n", eval_position());
     
     Move result = minimax(depth,NINF, INF, isWhite);
     // Print stats
     printf("Search complete! Nodes: %d (%.1fM), Best score: %d\n", 
            movesEvaluated, movesEvaluated / 1000000.0, result.score);
-    printf("Best move: from=0x%llx to=0x%llx\n", result.Piece, result.Square);
+    //printf("Best move: from=0x%llx to=0x%llx\n", result.Piece, result.Square);
     // For PV leaf nodes, replace score with immediate position eval after move
     if (result.Piece && result.Square) {
         BoardState savedState;
@@ -2681,8 +2690,9 @@ int unmakeMove() {
     return 1;
 }
 
+#ifndef NO_MAIN
 // Old main function - now renamed to avoid conflicts with frontend
-int main_old() {
+int main() {
     int isWhite = 0;
     initPieceBitboards();
 
@@ -2713,3 +2723,4 @@ int main_old() {
     
     return 0;
 }
+#endif // NO_MAIN

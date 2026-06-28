@@ -45,6 +45,10 @@ uint64_t engine_squareFromRowCol(int row, int col);
 // Get the current evaluation score (positive = white advantage, negative = black advantage)
 int engine_getCurrentScore();
 
+// Get the game status for the side whose turn it is to move.
+// Returns: 0 = game ongoing, 1 = checkmate (that side is mated/loses), 2 = stalemate (draw)
+int engine_getGameStatus(int sideToMoveIsWhite);
+
 #ifdef __cplusplus
 }
 #endif

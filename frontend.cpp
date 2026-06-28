@@ -7,6 +7,25 @@
 #include <map>
 #include <string>
 
+// Try to load a usable font from common locations across OSes.
+// Returns true on success. (The original hardcoded Windows path fails on Linux.)
+bool loadAnyFont(sf::Font& font) {
+    const char* candidates[] = {
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+    };
+    for (const char* path : candidates) {
+        if (font.loadFromFile(path)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Piece types: wp=white pawn, wr=white rook, etc. Empty square = ""
 std::string board[8][8];
 bool IsWhite = true; // Global variable to track if player is white
@@ -93,11 +112,7 @@ int pick_colour() {
     
     // Load font (using SFML's default rendering for now)
     sf::Font font;
-    // Try to load a system font - if it fails, we'll create simple text
-    bool fontLoaded = false;
-    if (font.loadFromFile("C:/Windows/Fonts/arial.ttf")) {
-        fontLoaded = true;
-    }
+    bool fontLoaded = loadAnyFont(font);
     
     // Create text labels
     sf::Text titleText, whiteText, blackText;
@@ -253,7 +268,7 @@ int main() {
     
     // Load font ONCE before loop
     sf::Font font;
-    bool fontLoaded = font.loadFromFile("C:/Windows/Fonts/arial.ttf");
+    bool fontLoaded = loadAnyFont(font);
     if (!fontLoaded) {
         std::cout << "Warning: Could not load font. Text will not be displayed." << std::endl;
     }
@@ -294,7 +309,33 @@ int main() {
     sf::Vector2f mousePos;
     
     // Game state - player always starts with their turn (after AI moves first if player is black)
-    bool playerTurn = true;  
+    bool playerTurn = true;
+
+    // Game-over state for the checkmate/stalemate overlay
+    bool gameOver = false;
+    std::string gameOverMessage = "";
+    std::string gameOverSubtitle = "";
+
+    // Helper: evaluate whether the side about to move has been mated/stalemated.
+    // sideIsWhite = the color whose turn it now is; sideIsPlayer = is that the human?
+    auto checkGameOver = [&](bool sideIsWhite, bool sideIsPlayer) {
+        int status = engine_getGameStatus(sideIsWhite ? 1 : 0);
+        if (status == 1) { // checkmate: the side to move is mated and loses
+            gameOver = true;
+            gameOverMessage = sideIsPlayer ? "Checkmate - You Lose" : "Checkmate - You Win!";
+        } else if (status == 2) { // stalemate
+            gameOver = true;
+            gameOverMessage = "Stalemate - Draw";
+        }
+        if (gameOver) {
+            gameOverSubtitle = "Press ESC to quit";
+            std::cout << gameOverMessage << std::endl;
+        }
+    };
+
+    // If the player is Black, the AI already moved first above - make sure
+    // that opening move didn't somehow end the game before checking player status.
+    checkGameOver(IsWhite, true);
 
     //std::cout << "DEBUG: Game starting. playerTurn = " << playerTurn 
            //   << ", waitingForAI = " << waitingForAI << std::endl;
@@ -305,24 +346,29 @@ int main() {
     while (window.isOpen()) {
         // AI makes its move at the START of the loop if needed
         // This ensures state is consistent before rendering
-        if (waitingForAI) {
+        if (waitingForAI && !gameOver) {
             try {
                 SimpleMove aiMove = engine_getAIMove();
-                
+
                 if (aiMove.from != 0 || aiMove.to != 0) {
                     // Track AI's move for highlighting
                     bitboardToSquare(aiMove.from, aiLastMoveFromRow, aiLastMoveFromCol);
                     bitboardToSquare(aiMove.to, aiLastMoveToRow, aiLastMoveToCol);
-                    
+
                     std::cout << "Syncing board from engine after AI move..." << std::endl;
                     syncBoardFromEngine();  // Update board from engine
                     std::cout << "Board synced successfully. Your turn!" << std::endl;
-                    std::cout << "AI moved from (" << aiLastMoveFromRow << "," << aiLastMoveFromCol 
+                    std::cout << "AI moved from (" << aiLastMoveFromRow << "," << aiLastMoveFromCol
                               << ") to (" << aiLastMoveToRow << "," << aiLastMoveToCol << ")" << std::endl;
+
+                    // AI has moved - it's now the player's turn. Did the AI checkmate us?
+                    checkGameOver(IsWhite, true);
                 } else {
+                    // AI returned no move - it has been mated or stalemated.
                     std::cout << "AI has no moves - Game Over!" << std::endl;
+                    checkGameOver(!IsWhite, false);
                 }
-                
+
                 waitingForAI = false;
                 playerTurn = true;
             } catch (const std::exception& e) {
@@ -350,7 +396,7 @@ int main() {
                 //std::cout << "DEBUG: Mouse clicked. playerTurn=" << playerTurn 
                   //        << ", waitingForAI=" << waitingForAI << std::endl;
                           
-                if (event.mouseButton.button == sf::Mouse::Left && playerTurn && !waitingForAI) {
+                if (event.mouseButton.button == sf::Mouse::Left && playerTurn && !waitingForAI && !gameOver) {
                     int col = event.mouseButton.x / squareSize;
                     int row = event.mouseButton.y / squareSize;
                     
@@ -562,7 +608,37 @@ int main() {
             
             window.draw(draggedSprite);
         }
-        
+
+        // Game-over overlay: dim the board and show the result message
+        if (gameOver) {
+            float boardPixels = squareSize * 8; // 800x800 board area
+
+            // Semi-transparent dark panel over the board
+            sf::RectangleShape overlay(sf::Vector2f(boardPixels, boardPixels));
+            overlay.setPosition(0, 0);
+            overlay.setFillColor(sf::Color(0, 0, 0, 180));
+            window.draw(overlay);
+
+            if (fontLoaded) {
+                // Main result line, centered on the board
+                sf::Text resultText(gameOverMessage, font, 48);
+                resultText.setStyle(sf::Text::Bold);
+                resultText.setFillColor(sf::Color::White);
+                sf::FloatRect rb = resultText.getLocalBounds();
+                resultText.setOrigin(rb.left + rb.width / 2.0f, rb.top + rb.height / 2.0f);
+                resultText.setPosition(boardPixels / 2.0f, boardPixels / 2.0f - 30);
+                window.draw(resultText);
+
+                // Subtitle / instructions
+                sf::Text subText(gameOverSubtitle, font, 22);
+                subText.setFillColor(sf::Color(220, 220, 220));
+                sf::FloatRect sb = subText.getLocalBounds();
+                subText.setOrigin(sb.left + sb.width / 2.0f, sb.top + sb.height / 2.0f);
+                subText.setPosition(boardPixels / 2.0f, boardPixels / 2.0f + 30);
+                window.draw(subText);
+            }
+        }
+
         // Display what we've drawn to the window
         window.display();
     }

@@ -6,6 +6,7 @@
 #include "moves.h"
 #include <stdio.h>
 #include <string.h>  // For memset
+#include <stdlib.h>  // For free
 
 // External declarations from main.c
 extern uint64_t White_king, Black_king, White_rooks, Black_rooks, White_queen, Black_queen;
@@ -16,6 +17,7 @@ extern int WcastleL, WcastleR, BcastleL, BcastleR;
 // External functions from main.c
 extern void initPieceBitboards();
 extern void updateAll();
+extern int isCheck(int isWhite);
 
 // Track which color the player is (1 = white, 0 = black)
 static int playerIsWhite = 1;
@@ -142,32 +144,22 @@ int engine_makePlayerMove(uint64_t from, uint64_t to) {
     
     // Force update of White, Black, and Main before making move
     extern void updateAll();
-    extern uint64_t White, Black, Main;
+    extern uint64_t White, Black;
     updateAll();
-    
-    printf("Attempting move: from=0x%llx to=0x%llx\n", from, to);
-    printf("White_pawns: 0x%llx\n", White_pawns);
-    printf("White: 0x%llx, Black: 0x%llx, Main: 0x%llx\n", White, Black, Main);
-    printf("Piece at from? White_pawns & from = 0x%llx\n", White_pawns & from);
-    printf("Piece at from? Main & from = 0x%llx\n", Main & from);
-    printf("Move structure before makeMove: Piece=0x%llx, Square=0x%llx\n", move.Piece, move.Square);
-    printf("Size of Move structure: %zu bytes\n", sizeof(Move));
-    
+
     // Check if there's actually a player piece at 'from'
     uint64_t playerPieces = playerIsWhite ? White : Black;
     if (!(playerPieces & from)) {
-        printf("ERROR: No %s piece at from square 0x%llx!\n", 
-               playerIsWhite ? "white" : "black", from);
+        printf("ERROR: No %s piece at from square!\n",
+               playerIsWhite ? "white" : "black");
         return 0;
     }
-    
+
     // Identify the piece type and square names
     const char* pieceType = getPieceTypeName(from);
     const char* fromSquare = bitboardToSquareName(from);
     const char* toSquare = bitboardToSquareName(to);
-    printf("Piece type: %s\n", pieceType);
-    printf("Move: %s to %s\n", fromSquare, toSquare);
-    
+
     int result = makeMove(move, playerIsWhite); // Use player's actual color
     
     if (result == 1) {
@@ -197,18 +189,13 @@ SimpleMove engine_getAIMove() {
     SimpleMove result;
     result.from = aiMove.Piece;
     result.to = aiMove.Square;
-    
-    printf("AI wants to move: from=0x%llx to=0x%llx\n", result.from, result.to);
-    
+
     if (aiMove.Piece != 0 || aiMove.Square != 0) {
         // Get piece info BEFORE making the move
         const char* pieceType = getPieceTypeName(result.from);
         const char* fromSquare = bitboardToSquareName(result.from);
         const char* toSquare = bitboardToSquareName(result.to);
-        
-        printf("AI attempting: %s from %s (0x%llx) to %s (0x%llx)\n", 
-               pieceType, fromSquare, result.from, toSquare, result.to);
-        
+
         int moveResult = makeMove(aiMove, aiColor); // Use AI's actual color
         if (moveResult == 1) {
             printf("AI moved: %s from %s to %s\n", pieceType, fromSquare, toSquare);
@@ -264,4 +251,20 @@ uint64_t engine_squareFromRowCol(int row, int col) {
 
 int engine_getCurrentScore() {
     return currentScore;
+}
+
+int engine_getGameStatus(int sideToMoveIsWhite) {
+    updateAll();
+
+    // findMoves returns only fully legal moves (already filtered for checks)
+    MoveList moves = findMoves(sideToMoveIsWhite);
+    int legalCount = moves.size;
+    if (moves.moves) free(moves.moves);
+
+    if (legalCount > 0) {
+        return 0; // game ongoing
+    }
+
+    // No legal moves: in check => checkmate, otherwise => stalemate
+    return isCheck(sideToMoveIsWhite) ? 1 : 2;
 }

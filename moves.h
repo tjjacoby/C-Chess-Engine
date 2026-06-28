@@ -94,7 +94,7 @@
 
 
     ///////////////////////////////////////////////////////////////////////////////////////
-    //Loop-ups 
+    //Look-ups 
 
 
     #define ClearFile_A (Full & ~(A1 | A2 | A3 | A4 | A5 | A6 | A7 | A8))
@@ -144,10 +144,18 @@
     #define ADia15 H8
 
     
-    #define castleWR F1|G1
-    #define castleWL B1|C1|D1
-    #define castleBR F8|G8
-    #define castleBL B8|C8|D8
+    #define castleWR (F1|G1)
+    #define castleWL (B1|C1|D1)
+    #define castleBR (F8|G8)
+    #define castleBL (B8|C8|D8)
 
     ////////////////////////////////////////////////////////////////////////////////////////
+
+    #define Typepawn 1
+    #define Typeknight 2
+    #define Typebishop 3
+    #define Typerook 4
+    #define Typequeen 5
+    #define Typeking 6
+
 
