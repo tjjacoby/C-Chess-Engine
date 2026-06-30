@@ -8,14 +8,19 @@
 #include "binary_printer.h"
 #include "position_tables.h"
 
+
+#define MAX_MOVES 65536  // Limit move history to a safe bound 
+#define BASE_DEPTH 4   // Base depth for midgame ( 4 is fast and good, 6 is slower plays around ~2300 elo)
+#define QMAX_DEPTH 4   // Maximum depth for quiescence capture extension (reduced for speed)
+
+
 // A BitBoard is just a 64-bit number used to represent the chessboard
 typedef uint64_t BitBoard;
 
-
 BitBoard vaildMovesWhite(void);
 BitBoard vaildMovesBlack(void);
-BitBoard find_rookmoves(BitBoard Piece, int isWhite);
-BitBoard find_bishopmoves(BitBoard Piece, int isWhite);
+BitBoard find_allrookmoves(BitBoard Piece, int isWhite);
+BitBoard find_allbishopmoves(BitBoard Piece, int isWhite);
 
 static inline BitBoard attacks_by_white(void);
 static inline BitBoard attacks_by_black(void);
@@ -34,10 +39,6 @@ MoveList findMoves(int isWhite);
 int quiesce(int alpha, int beta, int isMaximizingPlayer, int qdepth);
 
 void updateAll();
-
-#define MAX_MOVES 65536  // Limit move history to a safe bound 
-#define BASE_DEPTH 6  // Base depth for midgame ( 4 is fast and good, 6 is slower plays around ~2300 elo)
-#define QMAX_DEPTH 4   // Maximum depth for quiescence capture extension (reduced for speed)
 
 // Castling flags
 int WcastleL = 1;
@@ -174,7 +175,7 @@ static inline int square_is_defended(BitBoard square, int byWhite) {
 static inline int hanging_penalty(BitBoard pieceBB, BitBoard destBB, int moverIsWhite) {
     int type = find_type(pieceBB);
     if (type == 0) return 0;
-    if (type == 6) return 0;
+    if (type == Typeking) return 0;
     int attacked = square_is_attacked(destBB, !moverIsWhite);
     if (!attacked) return 0;
     int defended = square_is_defended(destBB, moverIsWhite);
@@ -268,9 +269,9 @@ static inline BitBoard attacks_by_white(void) {
     a |= knight_attacks(White_knights);
     a |= king_attacks(White_king);
     // Sliding pieces reuse existing generators per piece set
-    a |= find_rookmoves(White_rooks, 1);
-    a |= find_bishopmoves(White_bishops, 1);
-    a |= (find_rookmoves(White_queen, 1) | find_bishopmoves(White_queen, 1));
+    a |= find_allrookmoves(White_rooks, 1);
+    a |= find_allbishopmoves(White_bishops, 1);
+    a |= (find_allrookmoves(White_queen, 1) | find_allbishopmoves(White_queen, 1));
     return a;
 }
 
@@ -279,9 +280,9 @@ static inline BitBoard attacks_by_black(void) {
     a |= pawn_attacks(Black_pawns, 0);
     a |= knight_attacks(Black_knights);
     a |= king_attacks(Black_king);
-    a |= find_rookmoves(Black_rooks, 0);
-    a |= find_bishopmoves(Black_bishops, 0);
-    a |= (find_rookmoves(Black_queen, 0) | find_bishopmoves(Black_queen, 0));
+    a |= find_allrookmoves(Black_rooks, 0);
+    a |= find_allbishopmoves(Black_bishops, 0);
+    a |= (find_allrookmoves(Black_queen, 0) | find_allbishopmoves(Black_queen, 0));
     return a;
 }
 
@@ -352,27 +353,25 @@ void initPieceBitboards() {
     
 }
 
-void King_cap(int isWhite){
-    printf("Game Over:");
-    isWhite ? (printf("White Wins")) : (printf("Black Wins"));
-
-}
-
+// https://www.chessprogramming.org/Hyperbola_Quintessence
 BitBoard fileAttacks(BitBoard occ, BitBoard fileMaskEx, BitBoard bitMask) {
+    // Uses o ^ (o -2r)
+
     BitBoard forward, reversed;
+
     forward = occ & fileMaskEx;
-    reversed = reverse(forward); 
+
+    reversed = reverse(forward); // Reverse the bits to handle the other direction (reversed as subtracting only works from low to high bits)
     
-    forward -= bitMask;
-    reversed -= reverse(bitMask); 
-    forward ^= reverse(reversed); 
+    forward -= bitMask; // Flips every bit between piece and edge or blocker
+    reversed -= reverse(bitMask);  // just other way as subtracting only works in one direction
+
+    forward ^= reverse(reversed); // merge the two directions
     
-    forward &= fileMaskEx;
+    forward &= fileMaskEx; // Gets rid of the extra bits that were flipped in the subtraction step
     
     return forward;
 }
-
-
 
 //Returns all vaild moves for a king
 BitBoard find_kingmoves( BitBoard Piece, int isWhite) {
@@ -428,7 +427,6 @@ BitBoard find_kingmoves( BitBoard Piece, int isWhite) {
 
     }
 
-// #2
 // Finds and returns all valid pawn moves for a given pawn
 BitBoard find_pawnmoves(BitBoard Piece, int isWhite) {
 
@@ -506,84 +504,30 @@ Move find_pawntakeleft(BitBoard Piece, int isWhite) {
     return move;
 }
 
-Move find_tallLright(BitBoard Piece, int isWhite) {
-    Move move;
-    BitBoard vaild_moves = ~(White|Black); 
-    move.Square = ((Piece & ClearFile_H) >> 17) & vaild_moves;
-    move.Piece = Piece;
-    return move;
-    
-}
-Move find_tallLleft(BitBoard Piece, int isWhite) {
-    Move move;
-    BitBoard vaild_moves = ~(White|Black); // maybe a bug here, knights can capture 
-    move.Square = ((Piece & ClearFile_A) >> 15) & vaild_moves;
-    move.Piece = Piece;
-    return move;
-}
-Move find_shortLright(BitBoard Piece,int isWhite) {
-     Move move;
-    BitBoard vaild_moves = ~(White|Black); 
-    move.Square = ((Piece & ClearFile_G & ClearFile_H) >> 10) & vaild_moves;
-    move.Piece = Piece;
-    return move;
-}
-Move find_shortLleft(BitBoard Piece, int isWhite) {
-    Move move;
-    BitBoard vaild_moves = ~(White|Black); 
-    move.Square = ((Piece & ClearFile_B & ClearFile_A) >> 6) & vaild_moves;
-    move.Piece = Piece;
-    return move;
-}
-Move find_downtallLright(BitBoard Piece, int isWhite) {
-Move move;
-    BitBoard vaild_moves = ~(White|Black); 
-    move.Square = ((Piece & ClearFile_H) << 15) & vaild_moves;
-    move.Piece = Piece;
-    return move;
-}
-Move find_downtallLleft(BitBoard Piece, int isWhite) {
-    Move move;
-    BitBoard vaild_moves = ~(White|Black); 
-    move.Square = ((Piece & ClearFile_A) << 17) & vaild_moves;
-    move.Piece = Piece;
-    return move;
-}
-Move find_downshortLright(BitBoard Piece, int isWhite){
-    Move move;
-    BitBoard vaild_moves = ~(White|Black); 
-    move.Square = ((Piece & ClearFile_G & ClearFile_H) << 6) & vaild_moves;
-    move.Piece = Piece;
-    return move;
-}
-Move find_downshortLleft(BitBoard Piece, int isWhite) {
-    Move move;
-    BitBoard vaild_moves = ~(White|Black); 
-    move.Square = ((Piece & ClearFile_B & ClearFile_A) << 10) & vaild_moves;
-    move.Piece = Piece;
-    return move;
-}
-
+// #1 Knight moves
 BitBoard find_knightmoves(BitBoard Piece, int isWhite) {
 
-    BitBoard tall_L_right = (Piece & ClearFile_H) >> 17;
-    BitBoard tall_L_left = (Piece & ClearFile_A) >> 15;
+    // Naming convention is from whites perspective, so "down" is toward rank 1, "up" is toward rank 8
+    // Note works for black knights down is just up
+    BitBoard downtall_L_right = (Piece & ClearFile_H) >> 17;
+    BitBoard downtall_L_left = (Piece & ClearFile_A) >> 15;
 
-    BitBoard short_L_right = (Piece & ClearFile_G & ClearFile_H) >> 10;
-    BitBoard short_L_left = (Piece & ClearFile_B & ClearFile_A) >> 6;
+    BitBoard downshort_L_right = (Piece & ClearFile_G & ClearFile_H) >> 10;
+    BitBoard downshort_L_left = (Piece & ClearFile_B & ClearFile_A) >> 6;
 
-    BitBoard downTL_right = (Piece & ClearFile_H) << 15;
-    BitBoard downTL_left = (Piece & ClearFile_A) << 17;
+    BitBoard uptall_L_right = (Piece & ClearFile_H) << 15;
+    BitBoard uptall_L_left = (Piece & ClearFile_A) << 17;
 
-    BitBoard downShort_L_right = (Piece & ClearFile_G & ClearFile_H) << 6;
-    BitBoard downshort_L_left = (Piece & ClearFile_B & ClearFile_A) << 10;
+    BitBoard upshort_L_right = (Piece & ClearFile_G & ClearFile_H) << 6;
+    BitBoard upshort_L_left = (Piece & ClearFile_B & ClearFile_A) << 10;
+    
 
-    return (tall_L_left|tall_L_right|short_L_left|short_L_right|downTL_right|downTL_left|downshort_L_left|downShort_L_right) & (isWhite ? ~White:~Black); 
+    return (downtall_L_left|downtall_L_right|downshort_L_left|downshort_L_right|uptall_L_left|uptall_L_right|upshort_L_left|upshort_L_right) & (isWhite ? ~White:~Black); 
 
 }
 
 
-BitBoard help_Rook(BitBoard Piece, int isWhite) {
+BitBoard find_rookmoves(BitBoard Piece, int isWhite) {
 
     BitBoard RankMask= findRank(Piece); //this works
     BitBoard o = RankMask & Main; //this works 
@@ -604,28 +548,25 @@ BitBoard help_Rook(BitBoard Piece, int isWhite) {
 
     BitBoard file_attc = fileAttacks((Main&~Piece),FileMask,Piece);
     
-   
-   
-    
-    return ((file_attc^right^left) & (isWhite ? (~White) : (~Black))); //works for no pieces in the way
+    return ((file_attc^right^left) & (isWhite ? (~White) : (~Black))); 
     
 }
-BitBoard find_rookmoves(BitBoard Piece, int isWhite) {
+BitBoard find_allrookmoves(BitBoard Pieces, int isWhite) {
     
     BitBoard tempmove = 0;
     BitBoard moves = 0;
         
 
     BitBoard Piece_LSB;
-    BitBoard Temp = Piece;
+    BitBoard Temp = Pieces;
 
-        int size = countSetBits(Piece);
+        int size = countSetBits(Pieces);
         
         if(size > 1) {
             for(int i = 0; i < size; i++) {
                 //gets LSB to isolate the piece on the board
                 Piece_LSB = getLSB(Temp);
-                tempmove = help_Rook(Piece_LSB, isWhite);
+                tempmove = find_rookmoves(Piece_LSB, isWhite);
                 moves = tempmove | moves;
                 //removes the LSB then get the next(gets moves for each rook on the board)
                 Temp = removeLSB(Temp);
@@ -635,7 +576,7 @@ BitBoard find_rookmoves(BitBoard Piece, int isWhite) {
         }else {
             
             
-            BitBoard one = help_Rook(Piece,isWhite);
+            BitBoard one = find_rookmoves(Pieces,isWhite);
             
             return one;
         }
@@ -645,34 +586,35 @@ BitBoard find_rookmoves(BitBoard Piece, int isWhite) {
 
 
     }
-
-
-BitBoard help_Bishop(BitBoard Piece, int isWhite) {
+// #3 Bishop moves
+BitBoard find_bishopmoves(BitBoard Piece, int isWhite) {
 
     BitBoard dia;
     BitBoard antiDia;
 
     dia = fileAttacks((Main& ~Piece),findDia(Piece),Piece);
+
     antiDia = fileAttacks((Main& ~Piece),findADia(Piece),Piece);
+
     return ((dia ^ antiDia) & (isWhite ? (~White): (~Black)));
 
 }
-BitBoard find_bishopmoves(BitBoard Piece, int isWhite) {
+BitBoard find_allbishopmoves(BitBoard Pieces, int isWhite) {
 
         BitBoard tempmove = 0;
         BitBoard moves = 0;
             
 
         BitBoard Piece_LSB;
-        BitBoard Temp = Piece;
+        BitBoard Temp = Pieces;
 
-        int size = countSetBits(Piece);
+        int size = countSetBits(Pieces);
 
         if(size > 1) {
             for(int i = 0; i < size; i++) {
                 //gets LSB to isolate the piece on the board
                 Piece_LSB = getLSB(Temp);
-                tempmove = help_Bishop(Piece_LSB, isWhite);
+                tempmove = find_bishopmoves(Piece_LSB, isWhite);
                 moves = tempmove | moves;
                 //removes the LSB then get the next(gets moves for each bishop on the board)
                 Temp = removeLSB(Temp);
@@ -680,8 +622,8 @@ BitBoard find_bishopmoves(BitBoard Piece, int isWhite) {
             }
 
         }else {
-        
-            BitBoard one = help_Bishop(Piece,isWhite);
+                    
+            BitBoard one = find_bishopmoves(Pieces,isWhite);
             
             return one;
         }
@@ -691,70 +633,11 @@ BitBoard find_bishopmoves(BitBoard Piece, int isWhite) {
 
 
     }
-
+// #2 Queen moves: uses bishop and rook moves combined
 BitBoard find_queenmoves(BitBoard Piece, int isWhite) {
-    return (find_bishopmoves(Piece, isWhite) | find_rookmoves(Piece, isWhite));
+    return (find_allbishopmoves(Piece, isWhite) | find_allrookmoves(Piece, isWhite));
 }
 
-MoveList find_allpawns(int isWhite) {
-
-    Move tempmove;
-    Move tempmove2;
-    Move tempmove3;
-    Move tempmove4;
-
-    int size = countSetBits(isWhite ? White_pawns : Black_pawns);
-    
-    //Move moves[size*4];
-    Move * moves = (Move*)malloc(sizeof(Move) * (size*4));
-    
-    if (moves == NULL) {
-        fprintf(stderr, "ERROR: malloc failed in find_allpawns\n");
-        return (MoveList){.moves = NULL, .size = 0};
-    }
-
-    BitBoard Piece_LSB;
-    BitBoard Temp = isWhite ? White_pawns : Black_pawns;
-
-    int index = 0;  // Use a separate index variable
-
-    for (int i = 0; i < size; i++) {
-        //gets LSB to isolate the piece on the board
-        Piece_LSB = getLSB(Temp);
-        tempmove = find_pawnmoveup(Piece_LSB, isWhite);
-        tempmove2 = find_pawnmovedown(Piece_LSB, isWhite);
-        tempmove3 = find_pawntakeright(Piece_LSB, isWhite);
-        tempmove4 = find_pawntakeleft(Piece_LSB, isWhite);
-        if (tempmove4.Square) {
-            moves[index].Square = tempmove4.Square;
-            moves[index].Piece = tempmove4.Piece;
-            index++;
-        }
-        if (tempmove3.Square) {
-            moves[index].Square = tempmove3.Square;
-            moves[index].Piece = tempmove3.Piece;
-            index++;
-        }
-        if (tempmove2.Square) {
-            moves[index].Square = tempmove2.Square;
-            moves[index].Piece = tempmove2.Piece;
-            index++;
-        }
-        if (tempmove.Square) {
-            moves[index].Square = tempmove.Square;
-            moves[index].Piece = tempmove.Piece;
-            index++;
-        }
-        //removes the LSB then get the next pawn
-        Temp = removeLSB(Temp);
-    }
-
-    MoveList movelist;
-    movelist.moves = moves;
-    movelist.size = index;
-
-    return movelist;
-}
 int castle(int isWhite) {
 
 
@@ -782,50 +665,20 @@ int castle(int isWhite) {
    
 }
 
-MoveList find_Castles(int isWhite) {
-    Move tempmove;
 
-    int size = countSetBits(isWhite ? White_rooks : Black_rooks);
-    
-    
-    Move *moves = (Move *)malloc(sizeof(Move) * size);
-    
-    
-
-    BitBoard Piece_LSB;
-    BitBoard Temp = isWhite ? White_rooks : Black_rooks;
-
-    int index = 0;  // Use a separate index variable
-
-    for (int i = 0; i < size; i++) {
-        Piece_LSB = getLSB(Temp);
-        tempmove = castlemove(Piece_LSB,isWhite);
-        if(tempmove.Square) {
-            moves[index] = tempmove;
-            index++;
-        }
-        //removes the LSB then get the next
-        Temp = removeLSB(Temp);
-    }
-
-    MoveList movelist;
-    movelist.moves = moves;
-    movelist.size = index;
-    return movelist;
-}
 
 BitBoard vaildMovesWhite() {
     
     BitBoard pawns = find_pawnmoves(White_pawns,1);
     
-    BitBoard rooks = find_rookmoves(White_rooks,1);
+    BitBoard rooks = find_allrookmoves(White_rooks,1);
     
     BitBoard knights = find_knightmoves(White_knights,1);
     
     BitBoard king = find_kingmoves(White_king,1);
     
     BitBoard queens = find_queenmoves(White_queen,1);
-    BitBoard bishops = find_bishopmoves(White_bishops,1);
+    BitBoard bishops = find_allbishopmoves(White_bishops,1);
  
 
     return (pawns|rooks|knights|king|queens|bishops);
@@ -834,11 +687,11 @@ BitBoard vaildMovesWhite() {
 BitBoard vaildMovesBlack() {
 
     BitBoard pawns = find_pawnmoves(Black_pawns,0);
-    BitBoard rooks = find_rookmoves(Black_rooks,0);
+    BitBoard rooks = find_allrookmoves(Black_rooks,0);
     BitBoard knights = find_knightmoves(Black_knights,0);
     BitBoard king = find_kingmoves(Black_king,0);
     BitBoard queens = find_queenmoves(Black_queen,0);
-    BitBoard bishops = find_bishopmoves(Black_bishops,0);
+    BitBoard bishops = find_allbishopmoves(Black_bishops,0);
 
     return (pawns|rooks|knights|king|queens|bishops);
     
@@ -872,7 +725,7 @@ MoveList find_allrooks(int isWhite) {
         temp = removeLSB(temp);
 
         // Get valid rook moves for the current rook
-        BitBoard validMoves = help_Rook(rookSquare, isWhite);
+        BitBoard validMoves = find_rookmoves(rookSquare, isWhite);
 
         // Add each valid move to the moves array
         numofmoves = countSetBits(validMoves);
@@ -916,7 +769,7 @@ MoveList find_allbishops(int isWhite) {
         temp = removeLSB(temp);
 
         // Get valid rook moves for the current rook
-        BitBoard validMoves = help_Bishop(bishopSquare, isWhite);
+        BitBoard validMoves = find_bishopmoves(bishopSquare, isWhite);
 
         // Add each valid move to the moves array
         numofmoves = countSetBits(validMoves);
@@ -935,7 +788,6 @@ MoveList find_allbishops(int isWhite) {
 
     return moves;
 }
-
 MoveList find_allqueens(int isWhite) {
      MoveList moves;
     moves.size = 0;  // Initialize the size of the MoveList
@@ -960,7 +812,7 @@ MoveList find_allqueens(int isWhite) {
         temp = removeLSB(temp);
 
         // Get valid rook moves for the current rook
-        BitBoard validMoves = help_Bishop(QueenSquare, isWhite) | help_Rook(QueenSquare,isWhite);
+        BitBoard validMoves = find_bishopmoves(QueenSquare, isWhite) | find_rookmoves(QueenSquare,isWhite);
 
         // Add each valid move to the moves array
         numofmoves = countSetBits(validMoves);
@@ -979,7 +831,6 @@ MoveList find_allqueens(int isWhite) {
 
     return moves;
 }
-
 MoveList find_allknights(int isWhite) {
     MoveList movesList;
     movesList.size = 0;
@@ -1011,7 +862,6 @@ MoveList find_allknights(int isWhite) {
     movesList.moves = moves;
     return movesList;
 }
-
 MoveList find_allking(int isWhite) {
     BitBoard Piece = isWhite ? (White_king) : (Black_king);
     BitBoard valid = isWhite ? (~White) : (~Black);
@@ -1097,12 +947,188 @@ MoveList find_allking(int isWhite) {
 
     return move;
 }
+MoveList find_Castles(int isWhite) {
+    Move tempmove;
+
+    int size = countSetBits(isWhite ? White_rooks : Black_rooks);
+    
+    
+    Move *moves = (Move *)malloc(sizeof(Move) * size);
+    
+    
+
+    BitBoard Piece_LSB;
+    BitBoard Temp = isWhite ? White_rooks : Black_rooks;
+
+    int index = 0;  // Use a separate index variable
+
+    for (int i = 0; i < size; i++) {
+        Piece_LSB = getLSB(Temp);
+        tempmove = castlemove(Piece_LSB,isWhite);
+        if(tempmove.Square) {
+            moves[index] = tempmove;
+            index++;
+        }
+        //removes the LSB then get the next
+        Temp = removeLSB(Temp);
+    }
+
+    MoveList movelist;
+    movelist.moves = moves;
+    movelist.size = index;
+    return movelist;
+}
+MoveList find_allpawns(int isWhite) {
+
+    Move tempmove;
+    Move tempmove2;
+    Move tempmove3;
+    Move tempmove4;
+
+    int size = countSetBits(isWhite ? White_pawns : Black_pawns);
+    
+    //Move moves[size*4];
+    Move * moves = (Move*)malloc(sizeof(Move) * (size*4));
+    
+    if (moves == NULL) {
+        fprintf(stderr, "ERROR: malloc failed in find_allpawns\n");
+        return (MoveList){.moves = NULL, .size = 0};
+    }
+
+    BitBoard Piece_LSB;
+    BitBoard Temp = isWhite ? White_pawns : Black_pawns;
+
+    int index = 0;  // Use a separate index variable
+
+    for (int i = 0; i < size; i++) {
+        //gets LSB to isolate the piece on the board
+        Piece_LSB = getLSB(Temp);
+        tempmove = find_pawnmoveup(Piece_LSB, isWhite);
+        tempmove2 = find_pawnmovedown(Piece_LSB, isWhite);
+        tempmove3 = find_pawntakeright(Piece_LSB, isWhite);
+        tempmove4 = find_pawntakeleft(Piece_LSB, isWhite);
+        if (tempmove4.Square) {
+            moves[index].Square = tempmove4.Square;
+            moves[index].Piece = tempmove4.Piece;
+            index++;
+        }
+        if (tempmove3.Square) {
+            moves[index].Square = tempmove3.Square;
+            moves[index].Piece = tempmove3.Piece;
+            index++;
+        }
+        if (tempmove2.Square) {
+            moves[index].Square = tempmove2.Square;
+            moves[index].Piece = tempmove2.Piece;
+            index++;
+        }
+        if (tempmove.Square) {
+            moves[index].Square = tempmove.Square;
+            moves[index].Piece = tempmove.Piece;
+            index++;
+        }
+        //removes the LSB then get the next pawn
+        Temp = removeLSB(Temp);
+    }
+
+    MoveList movelist;
+    movelist.moves = moves;
+    movelist.size = index;
+
+    return movelist;
+}
+
+MoveList combineMoveLists(MoveList list1, MoveList list2) {
+    MoveList combinedList;
+
+    int size = list1.size + list2.size;
+    
+    // Handle empty case
+    if (size == 0) {
+        combinedList.moves = NULL;
+        combinedList.size = 0;
+        return combinedList;
+    }
+    
+    Move *moves = malloc(sizeof(Move) * (size));
+    // Allocate memory for the combined moves
+    combinedList.moves = moves;
+    //(Move *)malloc(sizeof(Move) * (list1.size + list2.size));
+    if (combinedList.moves == NULL) {
+        // Handle allocation failure
+        fprintf(stderr, "ERROR: malloc failed in combineMoveLists for %d moves\n", size);
+        combinedList.size = 0;
+        return combinedList;
+    }
+
+    // Copy moves from the first list
+    for (int i = 0; i < list1.size; ++i) {
+        combinedList.moves[i] = list1.moves[i];
+    }
+
+    // Copy moves from the second list
+    for (int i = 0; i < list2.size; ++i) {
+        combinedList.moves[list1.size + i] = list2.moves[i];
+    }
+
+    // Set the size of the combined list
+    combinedList.size = list1.size + list2.size;
+    //free other lists movearrays
+    
+    //////////////////////THIS IS BREAKING EVERYTHING FOR SOMEREASON
+    //free(list1.moves);
+   // free(list2.moves);
+    
+    return combinedList;
+}
+
+
+MoveList findMoves(int isWhite) {
+
+    MoveList moves;
+    MoveList pawnmoves = find_allpawns(isWhite);
+    
+    
+    MoveList rookmoves = find_allrooks(isWhite);
+  
+    MoveList queenmoves = find_allqueens(isWhite);
+
+    MoveList bishopmoves = find_allbishops(isWhite);
+   
+    MoveList kingmoves = find_allking(isWhite);
+ 
+
+    MoveList knightmoves = find_allknights(isWhite);
+    
+
+    //rooks,queens,pawns
+    MoveList RookpawnQueen = combineMoveLists(combineMoveLists(pawnmoves,rookmoves),queenmoves);
+    if (rookmoves.moves) free(rookmoves.moves);
+    if (pawnmoves.moves) free(pawnmoves.moves);
+    if (queenmoves.moves) free(queenmoves.moves);
+
+    MoveList KingKnightBishop = combineMoveLists(combineMoveLists(kingmoves,knightmoves),bishopmoves);
+    if (kingmoves.moves) free(kingmoves.moves);
+    if (knightmoves.moves) free(knightmoves.moves);
+    if (bishopmoves.moves) free(bishopmoves.moves);
+   
+    moves = combineMoveLists(RookpawnQueen,KingKnightBishop);
+    if (RookpawnQueen.moves) free(RookpawnQueen.moves);
+    if (KingKnightBishop.moves) free(KingKnightBishop.moves);
+    
+    
+
+    MoveList validmoves = filterChecks(moves,isWhite); 
+    free(moves.moves);
+    
+    return validmoves;
+}
 
 
 Move castlemove(BitBoard Piece,int isWhite) {
     Move move;
     
-    // CRITICAL FIX: Only allow castling if the rook is on its starting square
+    //  FIX: Only allow castling if the rook is on its starting square
     // AND the correspawning castling right is still available
     if(isWhite) {
         // White queenside castle: rook must be on A1 and WcastleL must be true
@@ -1150,54 +1176,8 @@ Move castlemove(BitBoard Piece,int isWhite) {
     return (Move){0};
 }
 
-MoveList combineMoveLists(MoveList list1, MoveList list2) {
-    MoveList combinedList;
-
-    int size = list1.size + list2.size;
-    
-    // Handle empty case
-    if (size == 0) {
-        combinedList.moves = NULL;
-        combinedList.size = 0;
-        return combinedList;
-    }
-    
-    Move *moves = malloc(sizeof(Move) * (size));
-    // Allocate memory for the combined moves
-    combinedList.moves = moves;
-    //(Move *)malloc(sizeof(Move) * (list1.size + list2.size));
-    if (combinedList.moves == NULL) {
-        // Handle allocation failure
-        fprintf(stderr, "ERROR: malloc failed in combineMoveLists for %d moves\n", size);
-        combinedList.size = 0;
-        return combinedList;
-    }
-
-    // Copy moves from the first list
-    for (int i = 0; i < list1.size; ++i) {
-        combinedList.moves[i] = list1.moves[i];
-    }
-
-    // Copy moves from the second list
-    for (int i = 0; i < list2.size; ++i) {
-        combinedList.moves[list1.size + i] = list2.moves[i];
-    }
-
-    // Set the size of the combined list
-    combinedList.size = list1.size + list2.size;
-    //free other lists movearrays
-    
-    //////////////////////THIS IS BREAKING EVERYTHING FOR SOMEREASON
-    //free(list1.moves);
-   // free(list2.moves);
-    
-    return combinedList;
-}
-
 int checkmate(int isWhite) { 
     MoveList valid = findMoves(isWhite);
-
-    
 
     if(valid.size == 0) {
 
@@ -1303,49 +1283,6 @@ MoveList filterChecks(MoveList moves, int isWhite) {
 
     return validmoves;
 }
-
-MoveList findMoves(int isWhite) {
-
-    MoveList moves;
-    MoveList pawnmoves = find_allpawns(isWhite);
-    
-    
-    MoveList rookmoves = find_allrooks(isWhite);
-  
-    MoveList queenmoves = find_allqueens(isWhite);
-
-    MoveList bishopmoves = find_allbishops(isWhite);
-   
-    MoveList kingmoves = find_allking(isWhite);
- 
-
-    MoveList knightmoves = find_allknights(isWhite);
-    
-
-    //rooks,queens,pawns
-    MoveList RookpawnQueen = combineMoveLists(combineMoveLists(pawnmoves,rookmoves),queenmoves);
-    if (rookmoves.moves) free(rookmoves.moves);
-    if (pawnmoves.moves) free(pawnmoves.moves);
-    if (queenmoves.moves) free(queenmoves.moves);
-
-    MoveList KingKnightBishop = combineMoveLists(combineMoveLists(kingmoves,knightmoves),bishopmoves);
-    if (kingmoves.moves) free(kingmoves.moves);
-    if (knightmoves.moves) free(knightmoves.moves);
-    if (bishopmoves.moves) free(bishopmoves.moves);
-   
-    moves = combineMoveLists(RookpawnQueen,KingKnightBishop);
-    if (RookpawnQueen.moves) free(RookpawnQueen.moves);
-    if (KingKnightBishop.moves) free(KingKnightBishop.moves);
-    
-    
-
-    MoveList validmoves = filterChecks(moves,isWhite); 
-    free(moves.moves);
-    
-    return validmoves;
-}
-
-
 
 
 int take(BitBoard sqaure, int isWhite) {
@@ -1868,6 +1805,7 @@ int move_piece(Move move, int isWhite) {
 // This function attempts to make a move
 // Used for player moves and for AI moves
 // Calls move_piece() which handles actual piece movement and captures, and also stores the move in history
+// Could make this faster for AI by skipping validation as AI only looks at valid moves
 int makeMove(Move move, int isWhite) {
     // Capture board state BEFORE making the move
     BoardState savedState;
@@ -1895,7 +1833,6 @@ int makeMove(Move move, int isWhite) {
 
     // If move was stored in history by move_piece, attach the pre-move snapshot
     // so unmakeMove has the correct previous state.
-    // We detect a new history entry by comparing counts.
     if (count > savedCount) {
         MoveHistory[count].prevState = savedState;
     }
@@ -1904,6 +1841,7 @@ int makeMove(Move move, int isWhite) {
     if(isCheck(isWhite)) {
         //printf("Invalid move: %s would be in check!\n", isWhite ? "White" : "Black");
         // Undo the move
+        // Since the move has not been pushed on the stack yet, must restore the board state manually
         White_pawns = savedState.White_pawns;
         White_knights = savedState.White_knights;
         White_rooks = savedState.White_rooks;
@@ -1923,8 +1861,6 @@ int makeMove(Move move, int isWhite) {
         return 0;
     }
 
-   //int test = checkmate(!isWhite);
-
     return 1;
 
     
@@ -1936,23 +1872,22 @@ void undocapture(Move made, int captured) {
         //means white was captured 
         switch (made.capturetype)
         {
-            case 1:
-
+            case Typepawn:
                 White_pawns = White_pawns | made.Square;
                 break;
-            case 2:
+            case Typeknight:
                 White_knights = White_knights | made.Square;
                 break;
-            case 3:
+            case Typebishop:
                 White_bishops = White_bishops | made.Square;
                 break;
-            case 4:
+            case Typerook:
                 White_rooks = White_rooks | made.Square;
                 break;
-            case 5: 
+            case Typequeen: 
                 White_queen = White_queen | made.Square;
                 break;
-            case 6:
+            case Typeking:
                 White_king = White_king | made.Square;
                 break;
             default:
@@ -1962,22 +1897,22 @@ void undocapture(Move made, int captured) {
     }else {
         switch (made.capturetype)
         {
-            case 1:
+            case Typepawn:
                 Black_pawns = Black_pawns | made.Square;
                 break;
-            case 2:
+            case Typeknight:
                 Black_knights = Black_knights | made.Square;
                 break;
-            case 3:
+            case Typebishop:
                 Black_bishops = Black_bishops | made.Square;
                 break;
-            case 4:
+            case Typerook:
                 Black_rooks = Black_rooks | made.Square;
                 break;
-            case 5: 
+            case Typequeen: 
                 Black_queen = Black_queen | made.Square;
                 break;
-            case 6:
+            case Typeking:
                 Black_king = Black_king | made.Square;
                 break;
             default:
@@ -1990,7 +1925,7 @@ void undocapture(Move made, int captured) {
 
 }
 
-
+// #5 Evaluation functions
 static inline int eval_piece_positions(BitBoard pieces, const int* posTable) {
     int score = 0;
     BitBoard temp = pieces;
@@ -2013,7 +1948,6 @@ static inline int pawn_eval(BitBoard White, BitBoard Black)
     
     // Single loop to check all pawn structure features per file
     for(int file = 0; file < 8; file++) {
-        // FIX: FileA is MSB, FileH is LSB, so shift RIGHT to move from A->B->C...->H
         BitBoard fileMask = FileA >> file;
         BitBoard whitePawnsInFile = White_pawns & fileMask;
         BitBoard blackPawnsInFile = Black_pawns & fileMask;
@@ -2158,6 +2092,8 @@ int eval_position() {
     return (WhiteScore - BlackScore);
 }
     
+
+// Old user move function
 int userMove(int isWhite) {
 
     //take in user input, check if its right then make that move, check if vaild,
@@ -2196,8 +2132,7 @@ int userMove(int isWhite) {
 
 
 
-// Quiescence search: extend search on noisy (capture) positions to avoid
-// horizon effect. Uses same White-centric evaluation. Alpha/beta semantics
+// Quiescence search: extend search on noisy (capture) positions to avoid horizon effect
 // mirror main minimax: alpha is best score for White (maximizing), beta is
 // best score for Black (minimizing). Returns a score.
 int quiesce(int alpha, int beta, int isMaximizingPlayer, int qdepth) {
@@ -2317,7 +2252,7 @@ Move minimax(int depth, int alpha, int beta, int isMaximizingPlayer) {
     int bestScore = (isMaximizingPlayer) ? NINF : INF;
     int foundValidMove = 0;  
 
-    // Safety check: at depth 5, we expect ~1-5M evaluations in midgame
+
     // 50M is a reasonable upper bound to prevent infinite loops from bugs
     if (movesEvaluated > 50000000) {
         fprintf(stderr, "WARNING: Search exceeded 50M nodes, aborting to prevent crash\n");
@@ -2524,11 +2459,11 @@ int getAdaptiveDepth() {
     // Endgame: 1-12 pieces → depth 5-6 (fewer moves, can search deeper)
     
     if (totalPieces >= 26) {
-        return 3;  // Opening: many pieces, keep it fast
-    } else if (totalPieces >= 20) {
-        return 3;  // Early midgame: still many moves
+        return BASE_DEPTH -1 ;  // Opening: many pieces, keep it fast
+    } else if (totalPieces >= 21) {
+        return BASE_DEPTH+ 1;  // Early midgame: still many moves
     } else if (totalPieces >= 13) {
-        return BASE_DEPTH;  // Midgame: use base depth (4)
+        return BASE_DEPTH + 1;  // Midgame
     } else if (totalPieces >= 8) {
         return BASE_DEPTH + 1;  // Early endgame: depth 5
     } else if (totalPieces >= 4) {
@@ -2559,7 +2494,7 @@ Move bestMove(int isWhite) {
     // Print stats
     printf("Search complete! Nodes: %d (%.1fM), Best score: %d\n", 
            movesEvaluated, movesEvaluated / 1000000.0, result.score);
-    //printf("Best move: from=0x%llx to=0x%llx\n", result.Piece, result.Square);
+    
     // For PV leaf nodes, replace score with immediate position eval after move
     if (result.Piece && result.Square) {
         BoardState savedState;
@@ -2626,6 +2561,7 @@ Move bestMove(int isWhite) {
 
 
 
+#ifndef NO_MAIN
 void compMove(int isWhite) {
     printf("\n%s (AI) is thinking...\n", isWhite ? "White" : "Black");
     Move move = bestMove(isWhite);
@@ -2657,40 +2593,6 @@ void userplay() {
 
 
 }
-
-
-
-
-int unmakeMove() {
-    if(count == 0) {
-        return -1;
-    }
-    
-    // Restore all piece bitboards from the state saved BEFORE this move
-    BoardState prev = MoveHistory[count].prevState;
-    White_pawns = prev.White_pawns;
-    White_knights = prev.White_knights;
-    White_rooks = prev.White_rooks;
-    White_bishops = prev.White_bishops;
-    White_queen = prev.White_queen;
-    White_king = prev.White_king;
-    Black_pawns = prev.Black_pawns;
-    Black_knights = prev.Black_knights;
-    Black_rooks = prev.Black_rooks;
-    Black_bishops = prev.Black_bishops;
-    Black_queen = prev.Black_queen;
-    Black_king = prev.Black_king;
-    
-    updateAll();
-    
-    // Clear the current move from history
-    MoveHistory[count].move = (Move){0};
-    count--;
-    
-    return 1;
-}
-
-#ifndef NO_MAIN
 // Old main function - now renamed to avoid conflicts with frontend
 int main() {
     int isWhite = 0;

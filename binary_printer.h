@@ -195,7 +195,9 @@ uint64_t findADia(uint64_t piece) {
     }
     return 0;
 }
-//Note this function was found on StackOver Flow (Dont understand it)
+// Flips bits from bit i to bit (63-i)
+// I.e if i = 3, flips it to 60
+// Swap adjacent bits, then swap pairs, then swap nibbles, then swap bytes, then swap 2-byte long pairs
 uint64_t reverse(uint64_t b) {
     b = (b & 0x5555555555555555) << 1 | ((b >> 1) & 0x5555555555555555);
     b = (b & 0x3333333333333333) << 2 | ((b >> 2) & 0x3333333333333333);
