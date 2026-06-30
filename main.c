@@ -2029,6 +2029,7 @@ int eval_position() {
     int numberOfBishopsWhite = countSetBits(White_bishops);
     int numberOfBishopsBlack = countSetBits(Black_bishops);
 
+    // Maybe should use shifts rather then multiplications, assume my compiler optimizes this anyway
     WhiteScore += (numberOfpawnsWhite * pawnValue);    
     WhiteScore += (numberOfKnightsWhite * KnightValue);    
     WhiteScore += (numberOfBishopsWhite * BishopValue);   

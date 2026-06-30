@@ -8,7 +8,7 @@
 CC  = gcc
 CXX = g++
 
-# Optimization level (-O2 makes the engine search much faster than the -O0 default)
+# Optimization level (-O2 makes the engine search faster than the -O0 default)
 OPT = -O2
 
 # Compiler / linker flags
