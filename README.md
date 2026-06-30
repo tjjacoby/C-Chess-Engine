@@ -43,7 +43,9 @@ Add depth setting to frontend at start of game
 
 ## FRONTEND MAKE 
 # Compile the frontend
-mingw32-make -f makefile_frontend
+make
+make run
+
 
 
 ## Author
